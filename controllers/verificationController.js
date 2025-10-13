@@ -32,10 +32,9 @@ export const sendVerificationCode = async (req, res) => {
     console.log(`Sending code ${code} to ${email}`);
     await transporter.sendMail(mailOptions);
     res.json({ success: true, message: "Verification code sent" });
-    console.error("Error sending email:", error.response || error);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: "Failed to send code" });
+    console.error("Error sending email:", error.response || error);
+    res.status(500).json({ success: false, message: "Failed to send verification code" });
   }
 };
 
