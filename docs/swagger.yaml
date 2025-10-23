@@ -17,36 +17,36 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RegisterRequest'
+              $ref: "#/components/schemas/RegisterRequest"
             example:
               name: "Jane Doe"
               email: "jane.doe@example.com"
               password: "StrongP@ssw0rd"
               role: "user"
       responses:
-        '201':
+        "201":
           description: User created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RegisterResponse'
+                $ref: "#/components/schemas/RegisterResponse"
               example:
                 message: "User registered successfully."
                 userId: "64b7f9d2c2aabf00123abcd4"
-        '400':
+        "400":
           description: Bad request (e.g., email already registered)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
               example:
                 message: "Email already registered"
-        '500':
+        "500":
           description: Server error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
               example:
                 message: "Error registering user"
 components:
