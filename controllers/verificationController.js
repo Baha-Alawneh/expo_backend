@@ -1,6 +1,20 @@
 import nodemailer from "nodemailer";
+import dotenv from "dotenv";
 
+dotenv.config();
+
+// Temporary in-memory storage (for production, use Redis or database)
 let codes = {};
+
+// Clean up expired codes every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const email in codes) {
+    if (now > codes[email].expires) {
+      delete codes[email];
+    }
+  }
+}, 10 * 60 * 1000);
 
 export const sendVerificationCode = async (req, res) => {
   const { email } = req.body;
@@ -16,16 +30,16 @@ export const sendVerificationCode = async (req, res) => {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-      user: "ayman.a.hijleh@gmail.com",
-      pass: "jslisqorskryqklx",
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
     },
   });
 
   const mailOptions = {
-    from: "ayman.a.hijleh@gmail.com",
+    from: process.env.EMAIL_USER,
     to: email,
     subject: "Your Verification Code",
-    text: `Your verification code is ${code}`,
+    text: `Your verification code is ${code}. This code will expire in 5 minutes.`,
   };
 
   try {
@@ -34,7 +48,9 @@ export const sendVerificationCode = async (req, res) => {
     res.json({ success: true, message: "Verification code sent" });
   } catch (error) {
     console.error("Error sending email:", error.response || error);
-    res.status(500).json({ success: false, message: "Failed to send verification code" });
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to send verification code" });
   }
 };
 
