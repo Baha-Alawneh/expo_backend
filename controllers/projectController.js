@@ -3,6 +3,7 @@ import {
   createProject,
   updateProject,
   getAllProjects,
+  getProjectsExceptStudentId,
 } from "../models/Project.js";
 import { getStudentById } from "../models/Student.js";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
@@ -35,8 +36,8 @@ export const getProjectController = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "Student not found" });
-
     const project = await getProjectByStudentId(student.student_id);
+
     if (!project)
       return res
         .status(404)
@@ -75,6 +76,133 @@ export const getProjectController = async (req, res) => {
   }
 };
 
+// 1. Get all projects
+export const getAllProjectsController = async (req, res) => {
+  try {
+    const projects = await getAllProjects();
+
+    if (!projects || projects.length === 0)
+      return res
+        .status(404)
+        .json({ success: false, message: "No projects found" });
+
+    // Generate signed URLs for each project's photos
+    for (const project of projects) {
+      // فك JSON لو كان نص
+      if (
+        project.project_photos &&
+        typeof project.project_photos === "string"
+      ) {
+        try {
+          project.project_photos = JSON.parse(project.project_photos);
+        } catch (err) {
+          console.error("Error parsing project_photos JSON:", err);
+          project.project_photos = [];
+        }
+      }
+
+      if (
+        Array.isArray(project.project_photos) &&
+        project.project_photos.length > 0
+      ) {
+        const signedUrls = await Promise.all(
+          project.project_photos.map(async (imageKey) => {
+            try {
+              const command = new GetObjectCommand({
+                Bucket: process.env.S3_BUCKET_NAME,
+                Key: imageKey,
+              });
+              return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+            } catch (err) {
+              console.error("Error generating signed URL:", imageKey, err);
+              return null;
+            }
+          })
+        );
+        project.project_photos = signedUrls.filter(Boolean);
+      }
+    }
+
+    res.json({ success: true, data: projects });
+  } catch (error) {
+    console.error("Error fetching all projects:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching all projects",
+    });
+  }
+};
+
+// 2. Get all projects except current user's project
+export const getAllExceptMyProjectController = async (req, res) => {
+  try {
+    const { user_id } = req.params;
+
+    if (!user_id)
+      return res
+        .status(400)
+        .json({ success: false, message: "User ID is required" });
+
+    const student = await getStudentById(user_id);
+    if (!student)
+      return res
+        .status(404)
+        .json({ success: false, message: "Student not found" });
+
+    const projects = await getProjectsExceptStudentId(student.student_id);
+
+    if (!projects || projects.length === 0)
+      return res
+        .status(404)
+        .json({ success: false, message: "No other projects found" });
+
+    // Generate signed URLs for each project's photos
+    for (const project of projects) {
+      // فك JSON لو كان نص
+      if (
+        project.project_photos &&
+        typeof project.project_photos === "string"
+      ) {
+        try {
+          project.project_photos = JSON.parse(project.project_photos);
+        } catch (err) {
+          console.error("Error parsing project_photos JSON:", err);
+          project.project_photos = [];
+        }
+      }
+
+      if (
+        Array.isArray(project.project_photos) &&
+        project.project_photos.length > 0
+      ) {
+        const signedUrls = await Promise.all(
+          project.project_photos.map(async (imageKey) => {
+            try {
+              const command = new GetObjectCommand({
+                Bucket: process.env.S3_BUCKET_NAME,
+                Key: imageKey,
+              });
+              return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+            } catch (err) {
+              console.error("Error generating signed URL:", imageKey, err);
+              return null;
+            }
+          })
+        );
+        project.project_photos = signedUrls.filter(Boolean);
+      }
+    }
+
+    res.json({ success: true, data: projects });
+  } catch (error) {
+    console.error("Error fetching projects except mine:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching projects except mine",
+    });
+  }
+};
+
 // POST /myproject/:user_id
 export const postProjectController = async (req, res) => {
   try {
@@ -96,10 +224,19 @@ export const postProjectController = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Project title is required" });
 
+    const existingProject = await getProjectByStudentId(student.student_id);
+    if (existingProject) {
+      throw new Error("Student already has a project. Use update instead.");
+    }
     const project = await createProject(student.student_id, data);
+    let message = "Project created successfully";
+    if (data.partner_email && !project.partnerExists) {
+      message += ",(Partner email not found, project created only for you)";
+    }
+
     res.status(201).json({
       success: true,
-      message: "Project created successfully",
+      message,
       data: project,
     });
   } catch (error) {
@@ -179,14 +316,25 @@ export const uploadProjectImagesController = async (req, res) => {
         .json({ success: false, message: "No images were uploaded." });
 
     const imageKeys = req.files.images.map((file) => file.key);
-
     // Delete old images with proper error handling
     if (project.project_photos?.length > 0) {
       const deletionResults = await Promise.allSettled(
-        project.project_photos.map(async (oldKey) => {
+        project.project_photos.map(async (photo) => {
+          // If photo is an object, get the key property; if it's a URL, extract the key from the URL
+          let key = photo;
+          if (typeof photo === "object" && photo.key) {
+            key = photo.key;
+          } else if (typeof photo === "object" && photo.fileName) {
+            // Optional: parse fileName or uri to get the S3 key if needed
+            key = decodeURIComponent(photo.fileName.split("?")[0]);
+          } else if (typeof photo === "string" && photo.startsWith("http")) {
+            // Extract the S3 key from the URL
+            const url = new URL(photo);
+            key = decodeURIComponent(url.pathname.substring(1));
+          }
           const del = new DeleteObjectCommand({
             Bucket: process.env.S3_BUCKET_NAME,
-            Key: oldKey,
+            Key: key,
           });
           return s3.send(del);
         })
@@ -237,45 +385,6 @@ export const uploadProjectImagesController = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error uploading project images",
-    });
-  }
-};
-
-// GET /projects - Get all projects (admin)
-export const getAllProjectsController = async (req, res) => {
-  try {
-    const projects = await getAllProjects();
-    
-    // Generate signed URLs for project images
-    const projectsWithSignedUrls = await Promise.all(
-      projects.map(async (project) => {
-        if (project.project_photos && Array.isArray(project.project_photos) && project.project_photos.length > 0) {
-          const signedImageUrls = await Promise.all(
-            project.project_photos.map(async (imageKey) => {
-              try {
-                const command = new GetObjectCommand({
-                  Bucket: process.env.S3_BUCKET_NAME,
-                  Key: imageKey,
-                });
-                return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
-              } catch (err) {
-                console.error("Error generating signed URL for:", imageKey, err);
-                return null;
-              }
-            })
-          );
-          project.project_photos = signedImageUrls.filter(Boolean);
-        }
-        return project;
-      })
-    );
-
-    res.json({ success: true, data: projectsWithSignedUrls });
-  } catch (error) {
-    console.error("Error fetching all projects:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching projects",
     });
   }
 };
