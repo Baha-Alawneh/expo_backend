@@ -1,14 +1,15 @@
-import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
-import bcrypt from "bcryptjs";
-import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  DeleteObjectCommand,
+  GetObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl as getSignedUrlSDK } from "@aws-sdk/s3-request-presigner";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
-dotenv.config();
-
 import * as Student from "../models/Student.js";
 
-// Configure S3 Client
+dotenv.config();
+
+// ✅ Configure AWS S3 Client
 const s3 = new S3Client({
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -17,6 +18,9 @@ const s3 = new S3Client({
   region: process.env.AWS_REGION,
 });
 
+// ================================================
+// =============== GET STUDENT =====================
+// ================================================
 export const getStudentController = async (req, res) => {
   try {
     const { user_id } = req.params;
@@ -28,33 +32,23 @@ export const getStudentController = async (req, res) => {
 
     // Generate signed URLs for photo and CV if they exist
     if (student.photo_name) {
-      try {
-        const photoCommand = new GetObjectCommand({
-          Bucket: process.env.S3_BUCKET_NAME,
-          Key: student.photo_name,
-        });
-        student.photo_url = await getSignedUrlSDK(s3, photoCommand, {
-          expiresIn: 60 * 60,
-        }); // 1 hour
-      } catch (error) {
-        console.error("Error generating photo URL:", error);
-        student.photo_url = null;
-      }
+      const photoCommand = new GetObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Key: student.photo_name,
+      });
+      student.photo_url = await getSignedUrlSDK(s3, photoCommand, {
+        expiresIn: 3600,
+      });
     }
 
     if (student.cv_name) {
-      try {
-        const cvCommand = new GetObjectCommand({
-          Bucket: process.env.S3_BUCKET_NAME,
-          Key: student.cv_name,
-        });
-        student.cv_url = await getSignedUrlSDK(s3, cvCommand, {
-          expiresIn: 60 * 60,
-        }); // 1 hour
-      } catch (error) {
-        console.error("Error generating CV URL:", error);
-        student.cv_url = null;
-      }
+      const cvCommand = new GetObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Key: student.cv_name,
+      });
+      student.cv_url = await getSignedUrlSDK(s3, cvCommand, {
+        expiresIn: 3600,
+      });
     }
 
     res.json({ success: true, data: student });
@@ -64,6 +58,9 @@ export const getStudentController = async (req, res) => {
   }
 };
 
+// ================================================
+// =============== UPDATE STUDENT =================
+// ================================================
 export const updateStudentController = async (req, res) => {
   try {
     const { user_id } = req.params;
@@ -76,96 +73,83 @@ export const updateStudentController = async (req, res) => {
   }
 };
 
+// ================================================
+// =============== UPLOAD FILES ====================
+// ================================================
 export const uploadStudentFilesController = async (req, res) => {
   try {
     const { user_id } = req.params;
-
-    // Debug logging
-    console.log("=== Upload Request Debug ===");
-    console.log("User ID:", user_id);
-    console.log("req.files:", req.files);
-    console.log("req.file:", req.file);
-    console.log("req.body:", req.body);
-    console.log("Content-Type:", req.headers["content-type"]);
-    console.log("===========================");
-
-    // Check if student exists
     const student = await Student.getStudentById(user_id);
-    if (!student) {
-      return res.status(404).json({
-        success: false,
-        message: "Student not found",
-      });
-    }
 
-    let photo_name = undefined;
-    let cv_name = undefined;
+    if (!student)
+      return res
+        .status(404)
+        .json({ success: false, message: "Student not found" });
 
-    // Handle uploaded files
+    let photo_name, cv_name;
+    const deletionPromises = [];
+
+    // Check and upload files
     if (req.files) {
       if (req.files.photo && req.files.photo[0]) {
         photo_name = req.files.photo[0].key;
-        console.log("Photo uploaded with key:", photo_name);
-
-        // Delete old photo from S3 if it exists
+        // Delete old photo if exists
         if (student.photo_name) {
-          try {
-            const deleteCommand = new DeleteObjectCommand({
-              Bucket: process.env.S3_BUCKET_NAME,
-              Key: student.photo_name,
-            });
-            await s3.send(deleteCommand);
-          } catch (error) {
-            console.error("Error deleting old photo:", error);
-          }
+          deletionPromises.push(
+            s3
+              .send(
+                new DeleteObjectCommand({
+                  Bucket: process.env.S3_BUCKET_NAME,
+                  Key: student.photo_name,
+                })
+              )
+              .catch((err) => {
+                console.error("Error deleting old photo:", err);
+                throw new Error("Failed to delete old photo from storage");
+              })
+          );
         }
       }
 
       if (req.files.cv && req.files.cv[0]) {
         cv_name = req.files.cv[0].key;
-        console.log("CV uploaded with key:", cv_name);
-
-        // Delete old CV from S3 if it exists
+        // Delete old CV if exists
         if (student.cv_name) {
-          try {
-            const deleteCommand = new DeleteObjectCommand({
-              Bucket: process.env.S3_BUCKET_NAME,
-              Key: student.cv_name,
-            });
-            await s3.send(deleteCommand);
-          } catch (error) {
-            console.error("Error deleting old CV:", error);
-          }
+          deletionPromises.push(
+            s3
+              .send(
+                new DeleteObjectCommand({
+                  Bucket: process.env.S3_BUCKET_NAME,
+                  Key: student.cv_name,
+                })
+              )
+              .catch((err) => {
+                console.error("Error deleting old CV:", err);
+                throw new Error("Failed to delete old CV from storage");
+              })
+          );
         }
       }
     }
 
-    console.log(
-      "Attempting to update DB with photo_name:",
-      photo_name,
-      "cv_name:",
-      cv_name
-    );
-
-    // Check if any files were uploaded
-    if (photo_name === undefined && cv_name === undefined) {
+    if (!photo_name && !cv_name)
       return res.status(400).json({
         success: false,
-        message:
-          "No files were uploaded. Please select a photo and/or CV to upload.",
+        message: "No files were uploaded",
       });
+
+    // Wait for all deletions to complete before updating database
+    if (deletionPromises.length > 0) {
+      await Promise.all(deletionPromises);
     }
 
-    // Update database with new file names
     const updatedStudent = await Student.updateStudentFiles(
       user_id,
       photo_name,
       cv_name
     );
 
-    console.log("Database updated successfully:", updatedStudent);
-
-    // Generate signed URLs for response
+    // Add signed URLs
     const response = { ...updatedStudent };
     if (updatedStudent.photo_name) {
       const photoCommand = new GetObjectCommand({
@@ -173,16 +157,17 @@ export const uploadStudentFilesController = async (req, res) => {
         Key: updatedStudent.photo_name,
       });
       response.photo_url = await getSignedUrlSDK(s3, photoCommand, {
-        expiresIn: 60 * 60,
+        expiresIn: 3600,
       });
     }
+
     if (updatedStudent.cv_name) {
       const cvCommand = new GetObjectCommand({
         Bucket: process.env.S3_BUCKET_NAME,
         Key: updatedStudent.cv_name,
       });
       response.cv_url = await getSignedUrlSDK(s3, cvCommand, {
-        expiresIn: 60 * 60,
+        expiresIn: 3600,
       });
     }
 
@@ -196,11 +181,13 @@ export const uploadStudentFilesController = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error uploading files",
-      error: error.message,
     });
   }
 };
 
+// ================================================
+// =============== DELETE FILES ====================
+// ================================================
 export const deleteStudentFileController = async (req, res) => {
   try {
     const { user_id } = req.params;
@@ -215,14 +202,12 @@ export const deleteStudentFileController = async (req, res) => {
 
     const student = await Student.getStudentById(user_id);
     if (!student) {
-      return res.status(404).json({
-        success: false,
-        message: "Student not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Student not found" });
     }
 
     const fileKey = fileType === "photo" ? student.photo_name : student.cv_name;
-
     if (!fileKey) {
       return res.status(404).json({
         success: false,
@@ -230,14 +215,23 @@ export const deleteStudentFileController = async (req, res) => {
       });
     }
 
-    // Delete from S3
-    const deleteCommand = new DeleteObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME,
-      Key: fileKey,
-    });
-    await s3.send(deleteCommand);
+    // Delete from S3 with error handling
+    try {
+      await s3.send(
+        new DeleteObjectCommand({
+          Bucket: process.env.S3_BUCKET_NAME,
+          Key: fileKey,
+        })
+      );
+    } catch (s3Error) {
+      console.error("S3 deletion error:", s3Error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to delete file from storage",
+      });
+    }
 
-    // Update database
+    // Update database only after successful S3 deletion
     const updatedStudent = await Student.updateStudentFiles(
       user_id,
       fileType === "photo" ? null : undefined,
@@ -246,9 +240,7 @@ export const deleteStudentFileController = async (req, res) => {
 
     res.json({
       success: true,
-      message: `${
-        fileType.charAt(0).toUpperCase() + fileType.slice(1)
-      } deleted successfully`,
+      message: `${fileType} deleted successfully`,
       data: updatedStudent,
     });
   } catch (error) {
@@ -256,7 +248,93 @@ export const deleteStudentFileController = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error deleting file",
-      error: error.message,
+    });
+  }
+};
+
+// ================================================
+// =============== GENERATE SIGNED URL =============
+// ================================================
+export const getSignedUrlController = async (req, res) => {
+  try {
+    const { key } = req.params;
+
+    if (!key) {
+      return res.status(400).json({
+        success: false,
+        message: "File key is required",
+      });
+    }
+
+    const command = new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: key,
+    });
+
+    const url = await getSignedUrlSDK(s3, command, { expiresIn: 3600 }); // Standardized to 1 hour
+
+    res.status(200).json({ success: true, url });
+  } catch (error) {
+    console.error("Signed URL error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error generating signed URL",
+    });
+  }
+};
+
+// ================================================
+// =============== GET ALL STUDENTS (ADMIN) ========
+// ================================================
+export const getAllStudentsController = async (req, res) => {
+  try {
+    const students = await Student.getAllStudents();
+    
+    // Generate signed URLs for photos and CVs
+    const studentsWithSignedUrls = await Promise.all(
+      students.map(async (student) => {
+        const result = { ...student };
+        
+        if (student.photo_name) {
+          try {
+            const photoCommand = new GetObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME,
+              Key: student.photo_name,
+            });
+            result.photo_url = await getSignedUrlSDK(s3, photoCommand, {
+              expiresIn: 3600,
+            });
+          } catch (err) {
+            console.error("Error generating photo URL:", err);
+            result.photo_url = null;
+          }
+        }
+
+        if (student.cv_name) {
+          try {
+            const cvCommand = new GetObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME,
+              Key: student.cv_name,
+            });
+            result.cv_url = await getSignedUrlSDK(s3, cvCommand, {
+              expiresIn: 3600,
+            });
+          } catch (err) {
+            console.error("Error generating CV URL:", err);
+            result.cv_url = null;
+          }
+        }
+
+        return result;
+      })
+    );
+
+    res.json({ success: true, data: studentsWithSignedUrls });
+  } catch (error) {
+    console.error("Error fetching all students:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error fetching students" 
     });
   }
 };

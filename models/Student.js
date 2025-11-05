@@ -47,7 +47,7 @@ export const getStudentById = async (user_id) => {
   if (student.skills) {
     if (Array.isArray(student.skills)) {
       skills = student.skills;
-    } else {
+    } else if (typeof student.skills === "string") {
       try {
         const parsed = JSON.parse(student.skills);
         skills = Array.isArray(parsed) ? parsed : [];
@@ -77,45 +77,48 @@ export const getStudentById = async (user_id) => {
 };
 
 export const updateStudentById = async (user_id, data) => {
-  const {
-    name,
-    email,
-    major,
-    year,
-    skills,
-    bio,
-    cv,
-    project,
-    photo_name,
-    cv_name,
-  } = data;
+  const { name, email, major, year, skills, bio, project } = data;
 
-  // تحديث جدول Users
-  await pool.execute(`UPDATE Users SET name = ?, email = ? WHERE user_id = ?`, [
-    name,
-    email,
-    user_id,
-  ]);
+  const connection = await pool.getConnection();
 
-  await pool.execute(
-    `UPDATE Students SET major = ?, year_of_study = ?, skills = ?, bio = ?, year_of_study = ? WHERE user_id = ?`,
-    [major, year, JSON.stringify(skills), bio, year, user_id]
-  );
+  try {
+    await connection.beginTransaction();
 
-  const [rows] = await pool.execute(
-    `SELECT student_id FROM Students WHERE user_id = ?`,
-    [user_id]
-  );
-  const student_id = rows[0]?.student_id;
-
-  if (project && student_id) {
-    await pool.execute(
-      `UPDATE Projects SET title = ?, booth = ? WHERE student_id = ?`,
-      [project.title, project.booth, student_id]
+    // Update Users table
+    await connection.execute(
+      `UPDATE Users SET name = ?, email = ? WHERE user_id = ?`,
+      [name, email, user_id]
     );
-  }
 
-  return await getStudentById(user_id);
+    // Update Students table - fixed duplicate year_of_study
+    await connection.execute(
+      `UPDATE Students SET major = ?, year_of_study = ?, skills = ?, bio = ? WHERE user_id = ?`,
+      [major, year, JSON.stringify(skills || []), bio, user_id]
+    );
+
+    // Get student_id for project update
+    const [rows] = await connection.execute(
+      `SELECT student_id FROM Students WHERE user_id = ?`,
+      [user_id]
+    );
+    const student_id = rows[0]?.student_id;
+
+    // Update project if provided and student_id exists
+    if (project && student_id) {
+      await connection.execute(
+        `UPDATE Projects SET title = ?, booth = ? WHERE student_id = ?`,
+        [project.title, project.booth, student_id]
+      );
+    }
+
+    await connection.commit();
+    return await getStudentById(user_id);
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 };
 
 export const updateStudentFiles = async (user_id, photo_name, cv_name) => {
@@ -144,4 +147,55 @@ export const updateStudentFiles = async (user_id, photo_name, cv_name) => {
   );
 
   return await getStudentById(user_id);
+};
+
+// Get all students (for admin panel)
+export const getAllStudents = async () => {
+  const [rows] = await pool.execute(
+    `SELECT 
+        s.student_id,
+        s.user_id,
+        s.university_id,
+        s.major,
+        s.year_of_study AS year,
+        s.skills,
+        s.bio,
+        s.photo_name,
+        s.cv_name,
+        u.name,
+        u.email
+     FROM Students AS s
+     JOIN Users AS u ON s.user_id = u.user_id
+     ORDER BY u.name ASC`
+  );
+
+  return rows.map((student) => {
+    let skills = [];
+    if (student.skills) {
+      if (Array.isArray(student.skills)) {
+        skills = student.skills;
+      } else if (typeof student.skills === "string") {
+        try {
+          const parsed = JSON.parse(student.skills);
+          skills = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          skills = [];
+        }
+      }
+    }
+
+    return {
+      student_id: student.student_id,
+      user_id: student.user_id,
+      university_id: student.university_id || "",
+      name: student.name || "",
+      email: student.email || "",
+      major: student.major || "",
+      year: student.year || "",
+      skills,
+      bio: student.bio || "",
+      photo_name: student.photo_name || null,
+      cv_name: student.cv_name || null,
+    };
+  });
 };

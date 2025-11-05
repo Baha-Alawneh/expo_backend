@@ -30,7 +30,13 @@ export const upload = multer({
       // Determine folder based on file type and field name
       let folder = "misc";
       if (file.mimetype.startsWith("image/")) {
-        folder = file.fieldname === "photo" ? "student-photos" : "images";
+        if (file.fieldname === "photo") {
+          folder = "student-photos";
+        } else if (file.fieldname === "images") {
+          folder = "project-images";
+        } else {
+          folder = "images";
+        }
       } else if (file.mimetype === "application/pdf") {
         folder = file.fieldname === "cv" ? "student-cvs" : "pdfs";
       }

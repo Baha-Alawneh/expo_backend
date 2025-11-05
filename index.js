@@ -4,30 +4,123 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+// Validate required environment variables
+const requiredEnvVars = [
+  "JWT_SECRET",
+  "MYSQL_HOST",
+  "MYSQL_USER",
+  "MYSQL_PASSWORD",
+  "MYSQL_DATABASE",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_REGION",
+  "S3_BUCKET_NAME",
+  "EMAIL_USER",
+  "EMAIL_PASS",
+];
+
+const missingEnvVars = requiredEnvVars.filter(
+  (varName) => !process.env[varName]
+);
+if (missingEnvVars.length > 0) {
+  console.error(
+    "❌ Missing required environment variables:",
+    missingEnvVars.join(", ")
+  );
+  process.exit(1);
+}
+
+import "./config/db.js"; // Import to test database connection
 import userRoutes from "./routes/userRoutes.js";
 import studentRoutes from "./routes/studentRoutes.js";
 import projectRoutes from "./routes/projectRouts.js";
-import fileRoutes from "./routes/fileRoutes.js";
 
-//note for the team: under here you have to add your routes usings
 const app = express();
 
-// Enable CORS for all routes
-app.use(cors());
+// CORS configuration - restrict to specific origins in production
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || "*", // Set CORS_ORIGIN in .env for production
+  credentials: true,
+  optionsSuccessStatus: 200,
+};
 
-app.use(express.json());
-app.use("/users", userRoutes);
-app.use("/students", studentRoutes);
-app.use("/projects", projectRoutes);
-app.use("/files", fileRoutes);
+app.use(cors(corsOptions));
 
+// Body parser with size limit
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// API versioning
+app.use("/api/v1/users", userRoutes);
+app.use("/api/v1/students", studentRoutes);
+app.use("/api/v1/projects", projectRoutes);
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Server is healthy",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Root endpoint
 app.get("/", (req, res) => {
-  res.send("Hello, Node.js project is running 🚀");
+  res.json({
+    success: true,
+    message: "Expo Backend API is running 🚀",
+    version: "1.0.0",
+    endpoints: {
+      users: "/api/v1/users",
+      students: "/api/v1/students",
+      projects: "/api/v1/projects",
+      health: "/health",
+    },
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route not found",
+  });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error("Global error:", err);
+
+  // Multer file size error
+  if (err.code === "LIMIT_FILE_SIZE") {
+    return res.status(400).json({
+      success: false,
+      message: "File size exceeds the 10MB limit",
+    });
+  }
+
+  // Multer file type error
+  if (err.message && err.message.includes("Invalid file type")) {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+    });
+  }
+
+  res.status(500).json({
+    success: false,
+    message:
+      process.env.NODE_ENV === "development"
+        ? err.message
+        : "Internal server error",
+  });
 });
 
 const PORT = process.env.PORT || 5000;
 const HOST = "0.0.0.0"; // Listen on all network interfaces
+
 app.listen(PORT, HOST, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Network access available at http://192.168.88.2:${PORT}`);
+  console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(`🌐 Network access available`);
+  console.log(`📝 API Documentation: http://localhost:${PORT}/`);
 });
