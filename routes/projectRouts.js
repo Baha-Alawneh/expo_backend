@@ -4,6 +4,8 @@ import {
   updateProjectController,
   postProjectController,
   uploadProjectImagesController,
+  getAllProjectsController,
+  getAllExceptMyProjectController,
 } from "../controllers/projectController.js";
 import { upload } from "../config/multer.js";
 import { authenticateToken, authorizeUser } from "../middleware/auth.js";
@@ -41,6 +43,17 @@ router.post(
   uploadRateLimiter,
   upload.fields([{ name: "images", maxCount: 10 }]),
   uploadProjectImagesController
+);
+
+// Get all projects
+router.get("/all", authenticateToken, getAllProjectsController);
+
+// Get all projects except current user's
+router.get(
+  "/all/except/:user_id",
+  authenticateToken,
+  authorizeUser,
+  getAllExceptMyProjectController
 );
 
 export default router;
