@@ -25,6 +25,10 @@ router.get(
   authenticateToken,
   getStudentController
 );
+
+// Get student by email (for viewing other students' profiles)
+router.get("/email/:email", authenticateToken, getStudentController);
+
 router.put(
   "/profile/:user_id",
   authenticateToken,

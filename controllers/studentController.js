@@ -23,8 +23,20 @@ const s3 = new S3Client({
 // ================================================
 export const getStudentController = async (req, res) => {
   try {
-    const { user_id } = req.params;
-    const student = await Student.getStudentById(user_id);
+    const { user_id, email } = req.params;
+
+    // Fetch student by user_id or email
+    let student;
+    if (email) {
+      student = await Student.getStudentByEmail(email);
+    } else if (user_id) {
+      student = await Student.getStudentById(user_id);
+    } else {
+      return res
+        .status(400)
+        .json({ success: false, message: "user_id or email is required" });
+    }
+
     if (!student)
       return res
         .status(404)

@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 dotenv.config();
 import { createStudent } from "../models/Student.js";
+import { createCompany } from "../models/Company.js";
 
 export const registerUser = async (req, res) => {
   const { name, email, password, role } = req.body;
@@ -24,7 +25,10 @@ export const registerUser = async (req, res) => {
     });
     if (role === "student") {
       await createStudent(userId);
+    } else if (role === "company") {
+      await createCompany(userId);
     }
+    // Visitors don't need additional records
 
     res.status(201).json({ message: "User registered successfully.", userId });
   } catch (error) {
@@ -37,20 +41,34 @@ export const loginUser = async (req, res) => {
   try {
     const user = await User.findUserByEmail(email);
     if (!user) {
-      return res.status(400).json({ message: "Invalid email or password" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid email or password" });
     }
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
     if (!isPasswordValid) {
-      return res.status(400).json({ message: "Invalid email or password" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid email or password" });
     }
     const token = jwt.sign(
       { userId: user.user_id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
-    res.status(200).json({ token });
+    res.status(200).json({
+      success: true,
+      message: "Login successful",
+      data: {
+        token,
+        userId: user.user_id,
+        role: user.role,
+        name: user.name,
+        email: user.email,
+      },
+    });
   } catch (error) {
     console.error("Error logging in:", error);
-    res.status(500).json({ message: "Error logging in" });
+    res.status(500).json({ success: false, message: "Error logging in" });
   }
 };
