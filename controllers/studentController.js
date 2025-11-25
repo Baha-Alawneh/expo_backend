@@ -282,3 +282,59 @@ export const getSignedUrlController = async (req, res) => {
     });
   }
 };
+
+// ================================================
+// =============== GET ALL STUDENTS (ADMIN) ========
+// ================================================
+export const getAllStudentsController = async (req, res) => {
+  try {
+    const students = await Student.getAllStudents();
+    
+    // Generate signed URLs for photos and CVs
+    const studentsWithSignedUrls = await Promise.all(
+      students.map(async (student) => {
+        const result = { ...student };
+        
+        if (student.photo_name) {
+          try {
+            const photoCommand = new GetObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME,
+              Key: student.photo_name,
+            });
+            result.photo_url = await getSignedUrlSDK(s3, photoCommand, {
+              expiresIn: 3600,
+            });
+          } catch (err) {
+            console.error("Error generating photo URL:", err);
+            result.photo_url = null;
+          }
+        }
+
+        if (student.cv_name) {
+          try {
+            const cvCommand = new GetObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME,
+              Key: student.cv_name,
+            });
+            result.cv_url = await getSignedUrlSDK(s3, cvCommand, {
+              expiresIn: 3600,
+            });
+          } catch (err) {
+            console.error("Error generating CV URL:", err);
+            result.cv_url = null;
+          }
+        }
+
+        return result;
+      })
+    );
+
+    res.json({ success: true, data: studentsWithSignedUrls });
+  } catch (error) {
+    console.error("Error fetching all students:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error fetching students" 
+    });
+  }
+};

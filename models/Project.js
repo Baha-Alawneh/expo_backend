@@ -168,32 +168,6 @@ export const updateProject = async (student_id, data) => {
     connection.release();
   }
 };
-// Get all projects
-export const getAllProjects = async () => {
-  const [rows] = await pool.query("SELECT * FROM Projects");
-
-  // Get students for each project
-  const projectsWithStudents = await Promise.all(
-    rows.map(async (project) => {
-      const [studentRows] = await pool.execute(
-        `SELECT s.student_id, u.name, u.email
-         FROM ProjectMembers pm
-         JOIN Students s ON pm.student_id = s.student_id
-         JOIN Users u ON s.user_id = u.user_id
-         WHERE pm.project_id = ?`,
-        [project.project_id]
-      );
-
-      // Keep project_photos as raw JSON string for controller to process
-      return {
-        ...project,
-        students: studentRows,
-      };
-    })
-  );
-
-  return projectsWithStudents;
-};
 
 // Get all projects except one student's project
 export const getProjectsExceptStudentId = async (student_id) => {
@@ -230,4 +204,64 @@ export const getProjectsExceptStudentId = async (student_id) => {
   );
 
   return projectsWithStudents;
+};
+
+// Get all projects (for admin panel)
+export const getAllProjects = async () => {
+  const [rows] = await pool.execute(
+    `SELECT * FROM Projects ORDER BY created_at DESC`
+  );
+
+  return rows.map((project) => {
+    let images = [];
+    
+    if (project.project_photos) {
+      const rawPhotos = project.project_photos;
+      
+      // Log what we actually have in the database
+      console.log(`📸 Project "${project.title}" - Raw DB value:`, rawPhotos);
+      console.log(`📸 Type: ${typeof rawPhotos}, Length: ${rawPhotos?.length}`);
+      
+      // Check if it's already an array (MySQL might return JSON as object)
+      if (Array.isArray(rawPhotos)) {
+        images = rawPhotos;
+      }
+      // Check if it's already an object (parsed JSON)
+      else if (typeof rawPhotos === 'object' && rawPhotos !== null) {
+        // It's already parsed, check if it has array-like properties
+        if (rawPhotos.length !== undefined) {
+          images = Array.from(rawPhotos);
+        } else {
+          images = [rawPhotos];
+        }
+      }
+      // If it's a string, try to parse it
+      else if (typeof rawPhotos === 'string') {
+        try {
+          const parsed = JSON.parse(rawPhotos);
+          images = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          // Not valid JSON - might be a single filename or corrupt data
+          console.error(`❌ Invalid JSON in project_photos for "${project.title}":`, rawPhotos.substring(0, 100));
+          
+          // Try to extract if it looks like a filename
+          if (rawPhotos.startsWith('project-images/') || rawPhotos.includes('.jpg') || rawPhotos.includes('.png')) {
+            images = [rawPhotos];
+          } else {
+            images = [];
+          }
+        }
+      }
+      
+      console.log(`📸 Final images array for "${project.title}":`, images);
+    }
+
+    return {
+      ...project,
+      project_photos: images,
+      status: project.status || "pending",
+      github_link: project.github_link || null,
+      video_url: project.video_url || null,
+    };
+  });
 };

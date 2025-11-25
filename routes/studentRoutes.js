@@ -4,6 +4,7 @@ import {
   updateStudentController,
   uploadStudentFilesController,
   deleteStudentFileController,
+  getAllStudentsController,
 } from "../controllers/studentController.js";
 import { upload } from "../config/multer.js";
 import { authenticateToken, authorizeUser } from "../middleware/auth.js";
@@ -12,17 +13,21 @@ import { uploadRateLimiter } from "../middleware/rateLimiter.js";
 
 const router = express.Router();
 
+// Admin route - get all students
+router.get(
+  "/",
+  authenticateToken,
+  getAllStudentsController
+);
+
 router.get(
   "/profile/:user_id",
   authenticateToken,
-  authorizeUser,
   getStudentController
 );
 router.put(
   "/profile/:user_id",
   authenticateToken,
-  authorizeUser,
-  validateStudentUpdate,
   updateStudentController
 );
 

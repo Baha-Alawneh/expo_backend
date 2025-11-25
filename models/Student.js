@@ -184,3 +184,54 @@ export const updateStudentFiles = async (user_id, photo_name, cv_name) => {
 
   return await getStudentById(user_id);
 };
+
+// Get all students (for admin panel)
+export const getAllStudents = async () => {
+  const [rows] = await pool.execute(
+    `SELECT 
+        s.student_id,
+        s.user_id,
+        s.university_id,
+        s.major,
+        s.year_of_study AS year,
+        s.skills,
+        s.bio,
+        s.photo_name,
+        s.cv_name,
+        u.name,
+        u.email
+     FROM Students AS s
+     JOIN Users AS u ON s.user_id = u.user_id
+     ORDER BY u.name ASC`
+  );
+
+  return rows.map((student) => {
+    let skills = [];
+    if (student.skills) {
+      if (Array.isArray(student.skills)) {
+        skills = student.skills;
+      } else if (typeof student.skills === "string") {
+        try {
+          const parsed = JSON.parse(student.skills);
+          skills = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          skills = [];
+        }
+      }
+    }
+
+    return {
+      student_id: student.student_id,
+      user_id: student.user_id,
+      university_id: student.university_id || "",
+      name: student.name || "",
+      email: student.email || "",
+      major: student.major || "",
+      year: student.year || "",
+      skills,
+      bio: student.bio || "",
+      photo_name: student.photo_name || null,
+      cv_name: student.cv_name || null,
+    };
+  });
+};

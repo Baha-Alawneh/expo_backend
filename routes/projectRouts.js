@@ -14,10 +14,16 @@ import { uploadRateLimiter } from "../middleware/rateLimiter.js";
 
 const router = express.Router();
 
+// Admin route - get all projects
+router.get(
+  "/",
+  authenticateToken,
+  getAllProjectsController
+);
+
 router.get(
   "/myproject/:user_id",
   authenticateToken,
-  authorizeUser,
   getProjectController
 );
 router.post(
