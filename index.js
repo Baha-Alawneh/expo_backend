@@ -34,6 +34,7 @@ import "./config/db.js"; // Import to test database connection
 import userRoutes from "./routes/userRoutes.js";
 import studentRoutes from "./routes/studentRoutes.js";
 import projectRoutes from "./routes/projectRouts.js";
+import companyRoutes from "./routes/companyRoutes.js";
 
 const app = express();
 
@@ -54,6 +55,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/students", studentRoutes);
 app.use("/api/v1/projects", projectRoutes);
+app.use("/api/v1/companies", companyRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -74,6 +76,7 @@ app.get("/", (req, res) => {
       users: "/api/v1/users",
       students: "/api/v1/students",
       projects: "/api/v1/projects",
+      companies: "/api/v1/companies",
       health: "/health",
     },
   });

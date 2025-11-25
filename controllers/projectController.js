@@ -135,26 +135,79 @@ export const getAllProjectsController = async (req, res) => {
 
 // 2. Get all projects except current user's project
 export const getAllExceptMyProjectController = async (req, res) => {
+  // try {
+  //   const { user_id } = req.params;
+
+  //   if (!user_id)
+  //     return res
+  //       .status(400)
+  //       .json({ success: false, message: "User ID is required" });
+
+  //   const student = await getStudentById(user_id);
+  //   if (!student)
+  //     return res
+  //       .status(404)
+  //       .json({ success: false, message: "Student not found" });
+
+  //   const projects = await getProjectsExceptStudentId(student.student_id);
+
+  //   if (!projects || projects.length === 0)
+  //     return res
+  //       .status(404)
+  //       .json({ success: false, message: "No other projects found" });
+
+  //   // Generate signed URLs for each project's photos
+  //   for (const project of projects) {
+  //     // فك JSON لو كان نص
+  //     if (
+  //       project.project_photos &&
+  //       typeof project.project_photos === "string"
+  //     ) {
+  //       try {
+  //         project.project_photos = JSON.parse(project.project_photos);
+  //       } catch (err) {
+  //         console.error("Error parsing project_photos JSON:", err);
+  //         project.project_photos = [];
+  //       }
+  //     }
+
+  //     if (
+  //       Array.isArray(project.project_photos) &&
+  //       project.project_photos.length > 0
+  //     ) {
+  //       const signedUrls = await Promise.all(
+  //         project.project_photos.map(async (imageKey) => {
+  //           try {
+  //             const command = new GetObjectCommand({
+  //               Bucket: process.env.S3_BUCKET_NAME,
+  //               Key: imageKey,
+  //             });
+  //             return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+  //           } catch (err) {
+  //             console.error("Error generating signed URL:", imageKey, err);
+  //             return null;
+  //           }
+  //         })
+  //       );
+  //       project.project_photos = signedUrls.filter(Boolean);
+  //     }
+  //   }
+
+  //   res.json({ success: true, data: projects });
+  // } catch (error) {
+  //   console.error("Error fetching projects except mine:", error);
+  //   res.status(500).json({
+  //     success: false,
+  //     message: "Error fetching projects except mine",
+  //   });
+  // }
   try {
-    const { user_id } = req.params;
-
-    if (!user_id)
-      return res
-        .status(400)
-        .json({ success: false, message: "User ID is required" });
-
-    const student = await getStudentById(user_id);
-    if (!student)
-      return res
-        .status(404)
-        .json({ success: false, message: "Student not found" });
-
-    const projects = await getProjectsExceptStudentId(student.student_id);
+    const projects = await getAllProjects();
 
     if (!projects || projects.length === 0)
       return res
         .status(404)
-        .json({ success: false, message: "No other projects found" });
+        .json({ success: false, message: "No projects found" });
 
     // Generate signed URLs for each project's photos
     for (const project of projects) {
@@ -195,10 +248,10 @@ export const getAllExceptMyProjectController = async (req, res) => {
 
     res.json({ success: true, data: projects });
   } catch (error) {
-    console.error("Error fetching projects except mine:", error);
+    console.error("Error fetching all projects:", error);
     res.status(500).json({
       success: false,
-      message: "Error fetching projects except mine",
+      message: "Error fetching all projects",
     });
   }
 };

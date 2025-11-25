@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 dotenv.config();
 import { createStudent } from "../models/Student.js";
+import { createCompany } from "../models/Company.js";
 
 export const registerUser = async (req, res) => {
   const { name, email, password, role } = req.body;
@@ -27,9 +28,13 @@ export const registerUser = async (req, res) => {
       created_at: new Date(),
     });
 
+    // Only create student/company records for student and company roles
     if (role === "student") {
       await createStudent(userId);
+    } else if (role === "company") {
+      await createCompany(userId);
     }
+    // Visitors don't need additional records
 
     res.status(201).json({
       success: true,

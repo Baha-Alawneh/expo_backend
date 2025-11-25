@@ -23,10 +23,10 @@ export const validateRegistration = (req, res, next) => {
     });
   }
 
-  if (!role || !["student", "company", "admin"].includes(role)) {
+  if (!role || !["student", "company", "admin", "visitor"].includes(role)) {
     return res.status(400).json({
       success: false,
-      message: "Valid role is required (student, company, or admin)",
+      message: "Valid role is required (student, company, admin, or visitor)",
     });
   }
 

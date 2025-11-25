@@ -38,13 +38,19 @@ export const getStudentById = async (user_id) => {
 
   if (rows.length === 0) return null;
   const student = rows[0];
-
   let skills = [];
+
   if (student.skills) {
-    try {
-      const parsed = JSON.parse(student.skills);
-      skills = Array.isArray(parsed) ? parsed : [];
-    } catch {
+    if (typeof student.skills === "string") {
+      try {
+        const parsed = JSON.parse(student.skills);
+        skills = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        skills = [];
+      }
+    } else if (Array.isArray(student.skills)) {
+      skills = student.skills;
+    } else {
       skills = [];
     }
   }
@@ -97,11 +103,18 @@ export const getStudentByEmail = async (email) => {
   const student = rows[0];
 
   let skills = [];
+
   if (student.skills) {
-    try {
-      const parsed = JSON.parse(student.skills);
-      skills = Array.isArray(parsed) ? parsed : [];
-    } catch {
+    if (typeof student.skills === "string") {
+      try {
+        const parsed = JSON.parse(student.skills);
+        skills = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        skills = [];
+      }
+    } else if (Array.isArray(student.skills)) {
+      skills = student.skills;
+    } else {
       skills = [];
     }
   }
