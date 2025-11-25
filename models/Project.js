@@ -214,15 +214,46 @@ export const getAllProjects = async () => {
 
   return rows.map((project) => {
     let images = [];
+    
     if (project.project_photos) {
-      try {
-        images = JSON.parse(project.project_photos);
-        if (!Array.isArray(images)) {
-          images = [];
-        }
-      } catch (e) {
-        images = [];
+      const rawPhotos = project.project_photos;
+      
+      // Log what we actually have in the database
+      console.log(`📸 Project "${project.title}" - Raw DB value:`, rawPhotos);
+      console.log(`📸 Type: ${typeof rawPhotos}, Length: ${rawPhotos?.length}`);
+      
+      // Check if it's already an array (MySQL might return JSON as object)
+      if (Array.isArray(rawPhotos)) {
+        images = rawPhotos;
       }
+      // Check if it's already an object (parsed JSON)
+      else if (typeof rawPhotos === 'object' && rawPhotos !== null) {
+        // It's already parsed, check if it has array-like properties
+        if (rawPhotos.length !== undefined) {
+          images = Array.from(rawPhotos);
+        } else {
+          images = [rawPhotos];
+        }
+      }
+      // If it's a string, try to parse it
+      else if (typeof rawPhotos === 'string') {
+        try {
+          const parsed = JSON.parse(rawPhotos);
+          images = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          // Not valid JSON - might be a single filename or corrupt data
+          console.error(`❌ Invalid JSON in project_photos for "${project.title}":`, rawPhotos.substring(0, 100));
+          
+          // Try to extract if it looks like a filename
+          if (rawPhotos.startsWith('project-images/') || rawPhotos.includes('.jpg') || rawPhotos.includes('.png')) {
+            images = [rawPhotos];
+          } else {
+            images = [];
+          }
+        }
+      }
+      
+      console.log(`📸 Final images array for "${project.title}":`, images);
     }
 
     return {

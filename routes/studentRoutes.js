@@ -23,14 +23,11 @@ router.get(
 router.get(
   "/profile/:user_id",
   authenticateToken,
-  authorizeUser,
   getStudentController
 );
 router.put(
   "/profile/:user_id",
   authenticateToken,
-  authorizeUser,
-  validateStudentUpdate,
   updateStudentController
 );
 

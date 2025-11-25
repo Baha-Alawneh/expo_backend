@@ -24,7 +24,6 @@ router.get(
 router.get(
   "/myproject/:user_id",
   authenticateToken,
-  authorizeUser,
   getProjectController
 );
 router.post(
