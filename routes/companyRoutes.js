@@ -9,6 +9,7 @@ import {
   getOfferingByCompanyIdController,
   createOfferingController,
   updateOfferingController,
+  getAllOfferingsController,
 } from "../controllers/companyController.js";
 import { upload } from "../config/multer.js";
 import { authenticateToken, authorizeUser } from "../middleware/auth.js";
@@ -20,12 +21,7 @@ const router = express.Router();
 router.get("/", authenticateToken, getAllCompaniesController);
 
 // Get company profile by user_id
-router.get(
-  "/profile/:user_id",
-  authenticateToken,
-  authorizeUser,
-  getCompanyController
-);
+router.get("/profile/:user_id", authenticateToken, getCompanyController);
 
 // Get company by email (for viewing other companies' profiles)
 router.get("/email/:email", authenticateToken, getCompanyController);
@@ -55,6 +51,9 @@ router.delete(
   authorizeUser,
   deleteCompanyFileController
 );
+
+// Get all offerings (with optional sorting)
+router.get("/offerings/all", authenticateToken, getAllOfferingsController);
 
 // Offering routes
 router.get(

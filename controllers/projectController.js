@@ -79,7 +79,8 @@ export const getProjectController = async (req, res) => {
 // 1. Get all projects
 export const getAllProjectsController = async (req, res) => {
   try {
-    const projects = await getAllProjects();
+    const { sortBy, sortOrder } = req.query; // e.g., ?sortBy=rating&sortOrder=DESC
+    const projects = await getAllProjects(sortBy, sortOrder);
 
     if (!projects || projects.length === 0)
       return res
@@ -202,7 +203,8 @@ export const getAllExceptMyProjectController = async (req, res) => {
   //   });
   // }
   try {
-    const projects = await getAllProjects();
+    const { sortBy, sortOrder } = req.query; // e.g., ?sortBy=rating&sortOrder=DESC
+    const projects = await getAllProjects(sortBy, sortOrder);
 
     if (!projects || projects.length === 0)
       return res

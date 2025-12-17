@@ -419,3 +419,52 @@ export const updateOfferingController = async (req, res) => {
       .json({ success: false, message: "Error updating offering" });
   }
 };
+
+// ================================================
+// ========= GET ALL OFFERINGS (WITH SORTING) =====
+// ================================================
+export const getAllOfferingsController = async (req, res) => {
+  try {
+    const { sortBy, sortOrder } = req.query; // e.g., ?sortBy=rating&sortOrder=DESC
+    const offerings = await Offering.getAllOfferings(sortBy, sortOrder);
+
+    if (!offerings || offerings.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No offerings found",
+      });
+    }
+
+    // Generate signed URLs for offering photos
+    for (const offering of offerings) {
+      if (offering.images && offering.images.length > 0) {
+        offering.offering_photos = await Promise.all(
+          offering.images.map(async (imageKey) => {
+            try {
+              const command = new GetObjectCommand({
+                Bucket: process.env.S3_BUCKET_NAME,
+                Key: imageKey,
+              });
+              return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+            } catch (error) {
+              console.error("Error generating signed URL:", error);
+              return null;
+            }
+          })
+        );
+      }
+    }
+
+    res.json({
+      success: true,
+      data: offerings,
+      count: offerings.length,
+    });
+  } catch (error) {
+    console.error("Error fetching all offerings:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching offerings",
+    });
+  }
+};

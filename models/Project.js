@@ -1,6 +1,8 @@
 import pool from "../config/db.js";
 import { v4 as uuidv4 } from "uuid";
 import { getStudentByEmail } from "./Student.js";
+import { getProjectAverageRating } from "./Feedback.js";
+
 // Get project by project_id
 export const getProjectByStudentId = async (student_id) => {
   const [projectRows] = await pool.execute(
@@ -170,7 +172,22 @@ export const updateProject = async (student_id, data) => {
 };
 
 // Get all projects except one student's project
-export const getProjectsExceptStudentId = async (student_id) => {
+export const getProjectsExceptStudentId = async (
+  student_id,
+  sortBy = null,
+  sortOrder = "DESC"
+) => {
+  // Build the ORDER BY clause
+  let orderByClause = "";
+  if (sortBy === "name") {
+    orderByClause = `ORDER BY p.title ${sortOrder}`;
+  } else if (sortBy === "rating") {
+    // We'll add rating after fetching
+    orderByClause = ""; // Will sort in JavaScript
+  } else {
+    orderByClause = "ORDER BY p.created_at DESC";
+  }
+
   const [rows] = await pool.query(
     `SELECT p.*
      FROM Projects p
@@ -178,11 +195,12 @@ export const getProjectsExceptStudentId = async (student_id) => {
        SELECT pm.project_id
        FROM ProjectMembers pm
        WHERE pm.student_id = ?
-     )`,
+     )
+     ${orderByClause}`,
     [student_id]
   );
 
-  // For each project, get the students associated with it
+  // For each project, get the students associated with it and ratings
   const projectsWithStudents = await Promise.all(
     rows.map(async (project) => {
       const [studentRows] = await pool.execute(
@@ -194,74 +212,140 @@ export const getProjectsExceptStudentId = async (student_id) => {
         [project.project_id]
       );
 
+      // Get rating stats
+      const ratingStats = await getProjectAverageRating(project.project_id);
+
       // Keep project_photos as raw JSON string for controller to process
       // The controller will parse and generate signed URLs
       return {
         ...project,
         students: studentRows,
+        average_rating: ratingStats.average_rating,
+        total_ratings: ratingStats.total_ratings,
       };
     })
   );
+
+  // If sorting by rating, sort in JavaScript
+  if (sortBy === "rating") {
+    projectsWithStudents.sort((a, b) => {
+      if (sortOrder === "ASC") {
+        return a.average_rating - b.average_rating;
+      } else {
+        return b.average_rating - a.average_rating;
+      }
+    });
+  }
 
   return projectsWithStudents;
 };
 
 // Get all projects (for admin panel)
-export const getAllProjects = async () => {
-  const [rows] = await pool.execute(
-    `SELECT * FROM Projects ORDER BY created_at DESC`
-  );
+export const getAllProjects = async (sortBy = null, sortOrder = "DESC") => {
+  // Build the ORDER BY clause
+  let orderByClause = "";
+  if (sortBy === "name") {
+    orderByClause = `ORDER BY title ${sortOrder}`;
+  } else if (sortBy === "rating") {
+    // We'll add rating after fetching
+    orderByClause = ""; // Will sort in JavaScript
+  } else {
+    orderByClause = "ORDER BY created_at DESC";
+  }
 
-  return rows.map((project) => {
-    let images = [];
-    
-    if (project.project_photos) {
-      const rawPhotos = project.project_photos;
-      
-      // Log what we actually have in the database
-      console.log(`📸 Project "${project.title}" - Raw DB value:`, rawPhotos);
-      console.log(`📸 Type: ${typeof rawPhotos}, Length: ${rawPhotos?.length}`);
-      
-      // Check if it's already an array (MySQL might return JSON as object)
-      if (Array.isArray(rawPhotos)) {
-        images = rawPhotos;
-      }
-      // Check if it's already an object (parsed JSON)
-      else if (typeof rawPhotos === 'object' && rawPhotos !== null) {
-        // It's already parsed, check if it has array-like properties
-        if (rawPhotos.length !== undefined) {
-          images = Array.from(rawPhotos);
-        } else {
-          images = [rawPhotos];
+  const [rows] = await pool.execute(`SELECT * FROM Projects ${orderByClause}`);
+
+  // For each project, get the students associated with it and ratings
+  const projectsWithStudents = await Promise.all(
+    rows.map(async (project) => {
+      // Get students for this project
+      const [studentRows] = await pool.execute(
+        `SELECT s.student_id, u.name, u.email
+         FROM ProjectMembers pm
+         JOIN Students s ON pm.student_id = s.student_id
+         JOIN Users u ON s.user_id = u.user_id
+         WHERE pm.project_id = ?`,
+        [project.project_id]
+      );
+
+      let images = [];
+
+      if (project.project_photos) {
+        const rawPhotos = project.project_photos;
+
+        // Log what we actually have in the database
+        console.log(`📸 Project "${project.title}" - Raw DB value:`, rawPhotos);
+        console.log(
+          `📸 Type: ${typeof rawPhotos}, Length: ${rawPhotos?.length}`
+        );
+
+        // Check if it's already an array (MySQL might return JSON as object)
+        if (Array.isArray(rawPhotos)) {
+          images = rawPhotos;
         }
-      }
-      // If it's a string, try to parse it
-      else if (typeof rawPhotos === 'string') {
-        try {
-          const parsed = JSON.parse(rawPhotos);
-          images = Array.isArray(parsed) ? parsed : [];
-        } catch (e) {
-          // Not valid JSON - might be a single filename or corrupt data
-          console.error(`❌ Invalid JSON in project_photos for "${project.title}":`, rawPhotos.substring(0, 100));
-          
-          // Try to extract if it looks like a filename
-          if (rawPhotos.startsWith('project-images/') || rawPhotos.includes('.jpg') || rawPhotos.includes('.png')) {
-            images = [rawPhotos];
+        // Check if it's already an object (parsed JSON)
+        else if (typeof rawPhotos === "object" && rawPhotos !== null) {
+          // It's already parsed, check if it has array-like properties
+          if (rawPhotos.length !== undefined) {
+            images = Array.from(rawPhotos);
           } else {
-            images = [];
+            images = [rawPhotos];
           }
         }
-      }
-      
-      console.log(`📸 Final images array for "${project.title}":`, images);
-    }
+        // If it's a string, try to parse it
+        else if (typeof rawPhotos === "string") {
+          try {
+            const parsed = JSON.parse(rawPhotos);
+            images = Array.isArray(parsed) ? parsed : [];
+          } catch (e) {
+            // Not valid JSON - might be a single filename or corrupt data
+            console.error(
+              `❌ Invalid JSON in project_photos for "${project.title}":`,
+              rawPhotos.substring(0, 100)
+            );
 
-    return {
-      ...project,
-      project_photos: images,
-      status: project.status || "pending",
-      github_link: project.github_link || null,
-      video_url: project.video_url || null,
-    };
-  });
+            // Try to extract if it looks like a filename
+            if (
+              rawPhotos.startsWith("project-images/") ||
+              rawPhotos.includes(".jpg") ||
+              rawPhotos.includes(".png")
+            ) {
+              images = [rawPhotos];
+            } else {
+              images = [];
+            }
+          }
+        }
+
+        console.log(`📸 Final images array for "${project.title}":`, images);
+      }
+
+      // Get rating stats
+      const ratingStats = await getProjectAverageRating(project.project_id);
+
+      return {
+        ...project,
+        project_photos: images,
+        status: project.status || "pending",
+        github_link: project.github_link || null,
+        video_url: project.video_url || null,
+        students: studentRows,
+        average_rating: ratingStats.average_rating,
+        total_ratings: ratingStats.total_ratings,
+      };
+    })
+  );
+
+  // If sorting by rating, sort in JavaScript
+  if (sortBy === "rating") {
+    projectsWithStudents.sort((a, b) => {
+      if (sortOrder === "ASC") {
+        return a.average_rating - b.average_rating;
+      } else {
+        return b.average_rating - a.average_rating;
+      }
+    });
+  }
+
+  return projectsWithStudents;
 };

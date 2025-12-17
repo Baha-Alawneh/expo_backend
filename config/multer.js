@@ -25,7 +25,11 @@ export const upload = multer({
     },
     key: function (req, file, cb) {
       const userId =
-        req.params.user_id || req.body.userId || req.user?.id || "guest";
+        req.params.user_id ||
+        req.body.userId ||
+        req.user?.userId ||
+        req.user?.id ||
+        "guest";
 
       // Determine folder based on file type and field name
       let folder = "misc";
@@ -34,11 +38,20 @@ export const upload = multer({
           folder = "student-photos";
         } else if (file.fieldname === "images") {
           folder = "project-images";
+        } else if (file.fieldname === "image") {
+          folder = "chat-images";
         } else {
           folder = "images";
         }
+      } else if (
+        file.mimetype.startsWith("audio/") ||
+        file.fieldname === "audio"
+      ) {
+        folder = "chat-audio";
       } else if (file.mimetype === "application/pdf") {
         folder = file.fieldname === "cv" ? "student-cvs" : "pdfs";
+      } else if (file.fieldname === "file") {
+        folder = "chat-files";
       }
 
       const fileName = `${folder}/${userId}/${Date.now()}-${file.originalname}`;
@@ -46,18 +59,48 @@ export const upload = multer({
     },
   }),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 20 * 1024 * 1024, // 20MB limit (increased for audio files)
   },
   fileFilter: function (req, file, cb) {
-    // Accept images and PDFs only
+    // For chat files and audio, allow any file type
+    if (
+      file.fieldname === "file" ||
+      file.fieldname === "image" ||
+      file.fieldname === "audio"
+    ) {
+      cb(null, true);
+      return;
+    }
+
+    // For other fields (photo, cv, etc), be more restrictive
+    const allowedTypes = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "text/plain",
+      "application/zip",
+      "application/x-zip-compressed",
+    ];
+
     if (
       file.mimetype.startsWith("image/") ||
-      file.mimetype === "application/pdf"
+      allowedTypes.includes(file.mimetype)
     ) {
       cb(null, true);
     } else {
       cb(
-        new Error("Invalid file type. Only images and PDFs are allowed."),
+        new Error(
+          "Invalid file type. Only images and common document types are allowed."
+        ),
         false
       );
     }
