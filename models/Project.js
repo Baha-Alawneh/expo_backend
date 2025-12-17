@@ -1,6 +1,8 @@
 import pool from "../config/db.js";
 import { v4 as uuidv4 } from "uuid";
 import { getStudentByEmail } from "./Student.js";
+import { getProjectAverageRating } from "./Feedback.js";
+
 // Get project by project_id
 export const getProjectByStudentId = async (student_id) => {
   const [projectRows] = await pool.execute(
@@ -170,7 +172,22 @@ export const updateProject = async (student_id, data) => {
 };
 
 // Get all projects except one student's project
-export const getProjectsExceptStudentId = async (student_id) => {
+export const getProjectsExceptStudentId = async (
+  student_id,
+  sortBy = null,
+  sortOrder = "DESC"
+) => {
+  // Build the ORDER BY clause
+  let orderByClause = "";
+  if (sortBy === "name") {
+    orderByClause = `ORDER BY p.title ${sortOrder}`;
+  } else if (sortBy === "rating") {
+    // We'll add rating after fetching
+    orderByClause = ""; // Will sort in JavaScript
+  } else {
+    orderByClause = "ORDER BY p.created_at DESC";
+  }
+
   const [rows] = await pool.query(
     `SELECT p.*
      FROM Projects p
@@ -178,11 +195,12 @@ export const getProjectsExceptStudentId = async (student_id) => {
        SELECT pm.project_id
        FROM ProjectMembers pm
        WHERE pm.student_id = ?
-     )`,
+     )
+     ${orderByClause}`,
     [student_id]
   );
 
-  // For each project, get the students associated with it
+  // For each project, get the students associated with it and ratings
   const projectsWithStudents = await Promise.all(
     rows.map(async (project) => {
       const [studentRows] = await pool.execute(
@@ -194,25 +212,50 @@ export const getProjectsExceptStudentId = async (student_id) => {
         [project.project_id]
       );
 
+      // Get rating stats
+      const ratingStats = await getProjectAverageRating(project.project_id);
+
       // Keep project_photos as raw JSON string for controller to process
       // The controller will parse and generate signed URLs
       return {
         ...project,
         students: studentRows,
+        average_rating: ratingStats.average_rating,
+        total_ratings: ratingStats.total_ratings,
       };
     })
   );
+
+  // If sorting by rating, sort in JavaScript
+  if (sortBy === "rating") {
+    projectsWithStudents.sort((a, b) => {
+      if (sortOrder === "ASC") {
+        return a.average_rating - b.average_rating;
+      } else {
+        return b.average_rating - a.average_rating;
+      }
+    });
+  }
 
   return projectsWithStudents;
 };
 
 // Get all projects (for admin panel)
-export const getAllProjects = async () => {
-  const [rows] = await pool.execute(
-    `SELECT * FROM Projects ORDER BY created_at DESC`
-  );
+export const getAllProjects = async (sortBy = null, sortOrder = "DESC") => {
+  // Build the ORDER BY clause
+  let orderByClause = "";
+  if (sortBy === "name") {
+    orderByClause = `ORDER BY title ${sortOrder}`;
+  } else if (sortBy === "rating") {
+    // We'll add rating after fetching
+    orderByClause = ""; // Will sort in JavaScript
+  } else {
+    orderByClause = "ORDER BY created_at DESC";
+  }
 
-  // For each project, get the students associated with it
+  const [rows] = await pool.execute(`SELECT * FROM Projects ${orderByClause}`);
+
+  // For each project, get the students associated with it and ratings
   const projectsWithStudents = await Promise.all(
     rows.map(async (project) => {
       // Get students for this project
@@ -277,6 +320,9 @@ export const getAllProjects = async () => {
         console.log(`📸 Final images array for "${project.title}":`, images);
       }
 
+      // Get rating stats
+      const ratingStats = await getProjectAverageRating(project.project_id);
+
       return {
         ...project,
         project_photos: images,
@@ -284,9 +330,22 @@ export const getAllProjects = async () => {
         github_link: project.github_link || null,
         video_url: project.video_url || null,
         students: studentRows,
+        average_rating: ratingStats.average_rating,
+        total_ratings: ratingStats.total_ratings,
       };
     })
   );
+
+  // If sorting by rating, sort in JavaScript
+  if (sortBy === "rating") {
+    projectsWithStudents.sort((a, b) => {
+      if (sortOrder === "ASC") {
+        return a.average_rating - b.average_rating;
+      } else {
+        return b.average_rating - a.average_rating;
+      }
+    });
+  }
 
   return projectsWithStudents;
 };
