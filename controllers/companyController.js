@@ -524,7 +524,8 @@ export const assignBoothToCompanyController = async (req, res) => {
     console.error("Error assigning booth to company:", error);
     res.status(500).json({
       success: false,
-      message: "Error assigning booth to company",
+      message: "Error assigning booth to company",});
+  }}
 // ========= GET ALL OFFERINGS (WITH SORTING) =====
 // ================================================
 export const getAllOfferingsController = async (req, res) => {
@@ -588,7 +589,11 @@ export const unassignBoothFromCompanyController = async (req, res) => {
     console.error("Error unassigning booth from company:", error);
     res.status(500).json({
       success: false,
-      message: "Error unassigning booth from company",
+      message: "Error unassigning booth from company",})
+    }
+  }
+
+
 // ================================================
 // ============= UPLOAD OFFERING IMAGES ===========
 // ================================================
