@@ -36,6 +36,9 @@ import studentRoutes from "./routes/studentRoutes.js";
 import projectRoutes from "./routes/projectRouts.js";
 import companyRoutes from "./routes/companyRoutes.js";
 import boothRoutes from "./routes/boothRoutes.js";
+import feedbackRoutes from "./routes/feedbackRoutes.js";
+import chatRoutes from "./routes/chatRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 
 const app = express();
 
@@ -58,6 +61,9 @@ app.use("/api/v1/students", studentRoutes);
 app.use("/api/v1/projects", projectRoutes);
 app.use("/api/v1/companies", companyRoutes);
 app.use("/api/v1", boothRoutes);
+app.use("/api/v1/feedback", feedbackRoutes);
+app.use("/api/v1/chats", chatRoutes);
+app.use("/api/v1/admin", adminRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -79,6 +85,9 @@ app.get("/", (req, res) => {
       students: "/api/v1/students",
       projects: "/api/v1/projects",
       companies: "/api/v1/companies",
+      feedback: "/api/v1/feedback",
+      chats: "/api/v1/chats",
+      admin: "/api/v1/admin",
       health: "/health",
     },
   });

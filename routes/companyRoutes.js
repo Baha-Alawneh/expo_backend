@@ -13,6 +13,8 @@ import {
   getUnassignedCompaniesController,
   assignBoothToCompanyController,
   unassignBoothFromCompanyController,
+  getAllOfferingsController,
+  uploadOfferingImagesController,
 } from "../controllers/companyController.js";
 import { upload } from "../config/multer.js";
 import { authenticateToken, authorizeUser } from "../middleware/auth.js";
@@ -31,12 +33,7 @@ router.get(
 );
 
 // Get company profile by user_id
-router.get(
-  "/profile/:user_id",
-  authenticateToken,
-  authorizeUser,
-  getCompanyController
-);
+router.get("/profile/:user_id", authenticateToken, getCompanyController);
 
 // Get company by email (for viewing other companies' profiles)
 router.get("/email/:email", authenticateToken, getCompanyController);
@@ -66,6 +63,9 @@ router.delete(
   authorizeUser,
   deleteCompanyFileController
 );
+
+// Get all offerings (with optional sorting)
+router.get("/offerings/all", authenticateToken, getAllOfferingsController);
 
 // Offering routes
 router.get(
@@ -100,5 +100,14 @@ router.put(
 router.get("/unassigned", authenticateToken, getUnassignedCompaniesController);
 router.patch("/:company_id/assign-booth", authenticateToken, assignBoothToCompanyController);
 router.patch("/:company_id/unassign-booth", authenticateToken, unassignBoothFromCompanyController);
+// Upload offering images
+router.post(
+  "/offering/:user_id/upload",
+  authenticateToken,
+  authorizeUser,
+  uploadRateLimiter,
+  upload.fields([{ name: "images", maxCount: 10 }]),
+  uploadOfferingImagesController
+);
 
 export default router;

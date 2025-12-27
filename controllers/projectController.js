@@ -122,7 +122,8 @@ export const getProjectByIdController = async (req, res) => {
 // 1. Get all projects
 export const getAllProjectsController = async (req, res) => {
   try {
-    const projects = await Project.getAllProjects();
+    const { sortBy, sortOrder } = req.query; // e.g., ?sortBy=rating&sortOrder=DESC
+    const projects = await getAllProjects(sortBy, sortOrder);
 
     if (!projects || projects.length === 0)
       return res
@@ -245,7 +246,8 @@ export const getAllExceptMyProjectController = async (req, res) => {
   //   });
   // }
   try {
-    const projects = await getAllProjects();
+    const { sortBy, sortOrder } = req.query; // e.g., ?sortBy=rating&sortOrder=DESC
+    const projects = await getAllProjects(sortBy, sortOrder);
 
     if (!projects || projects.length === 0)
       return res
@@ -320,7 +322,12 @@ export const postProjectController = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Project title is required" });
 
-    const existingProject = await Project.getProjectByStudentId(student.student_id);
+    if (!data.type || !['engineering', 'science'].includes(data.type))
+      return res
+        .status(400)
+        .json({ success: false, message: "Valid project type is required (engineering or science)" });
+
+    const existingProject = await getProjectByStudentId(student.student_id);
     if (existingProject) {
       throw new Error("Student already has a project. Use update instead.");
     }
