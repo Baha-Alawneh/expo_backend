@@ -10,6 +10,49 @@ export const createCompany = async (user_id) => {
   return { company_id, user_id };
 };
 
+export const getCompanyByCompanyId = async (company_id) => {
+  if (!company_id) throw new Error("company_id is required");
+
+  const [rows] = await pool.execute(
+    `SELECT 
+        c.company_id,
+        c.user_id,
+        c.company_name,
+        c.type,
+        c.description,
+        c.phone,
+        c.address,
+        c.booth_id,
+        c.profile_image,
+        c.website_url,
+        u.name,
+        u.email
+     FROM Companies AS c
+     JOIN Users AS u ON c.user_id = u.user_id
+     WHERE c.company_id = ?`,
+    [company_id]
+  );
+
+  if (rows.length === 0) return null;
+  const company = rows[0];
+
+  return {
+    company_id: company.company_id,
+    user_id: company.user_id,
+    name: company.name || "",
+    email: company.email || "",
+    company_name: company.company_name || "",
+    type: company.type || "",
+    description: company.description || "",
+    company_email: company.company_email || "",
+    phone: company.phone || "",
+    address: company.address || "",
+    booth_id: company.booth_id || "",
+    profile_image: company.profile_image || null,
+    website_url: company.website_url || "",
+  };
+};
+
 export const getCompanyById = async (user_id) => {
   if (!user_id) throw new Error("user_id is required");
 
@@ -18,6 +61,7 @@ export const getCompanyById = async (user_id) => {
         c.company_id,
         c.user_id,
         c.company_name,
+        c.type,
         c.description,
         c.phone,
         c.address,
@@ -41,6 +85,7 @@ export const getCompanyById = async (user_id) => {
     name: company.name || "",
     email: company.email || "",
     company_name: company.company_name || "",
+    type: company.type || "",
     description: company.description || "",
     company_email: company.company_email || "",
     phone: company.phone || "",
@@ -59,6 +104,7 @@ export const getCompanyByEmail = async (email) => {
         c.company_id,
         c.user_id,
         c.company_name,
+        c.type,
         c.description,
         c.phone,
         c.address,
@@ -82,6 +128,7 @@ export const getCompanyByEmail = async (email) => {
     name: company.name || "",
     email: company.email || "",
     company_name: company.company_name || "",
+    type: company.type || "",
     description: company.description || "",
     company_email: company.company_email || "",
     phone: company.phone || "",
@@ -93,7 +140,7 @@ export const getCompanyByEmail = async (email) => {
 };
 
 export const updateCompanyById = async (user_id, data) => {
-  const { company_name, phone, address, description, website_url } =
+  const { company_name, phone, address, description, website_url, type } =
     data;
 
   console.log("Model updateCompanyById - Received data:", {
@@ -102,6 +149,7 @@ export const updateCompanyById = async (user_id, data) => {
     address,
     description,
     website_url,
+    type,
     user_id,
   });
 
@@ -117,7 +165,8 @@ export const updateCompanyById = async (user_id, data) => {
         phone = ?,
         address = ?,
         description = ?,
-        website_url = ?
+        website_url = ?,
+        type = ?
        WHERE user_id = ?`,
       [
         company_name,
@@ -125,6 +174,7 @@ export const updateCompanyById = async (user_id, data) => {
         address,
         description,
         website_url,
+        type,
         user_id,
       ]
     );
@@ -160,6 +210,7 @@ export const getAllCompanies = async () => {
       company_id,
       user_id,
       company_name,
+      type,
       description,
       phone,
       booth_id,
@@ -171,4 +222,62 @@ export const getAllCompanies = async () => {
   );
 
   return rows;
+};
+
+// ================================================
+// =============== BOOTH ASSIGNMENT ===============
+// ================================================
+
+export const getUnassignedCompanies = async () => {
+  const [rows] = await pool.query(
+    `SELECT 
+      company_id,
+      user_id,
+      company_name,
+      type,
+      description,
+      phone,
+      website_url
+    FROM Companies
+    WHERE booth_id IS NULL OR booth_id = ''
+    ORDER BY company_name ASC`
+  );
+
+  return rows;
+};
+
+export const assignBoothToCompany = async (company_id, booth_id) => {
+  console.log('🏢 Assigning booth to company:', { company_id, booth_id });
+  
+  // Update Companies table
+  const [result1] = await pool.execute(
+    `UPDATE Companies SET booth_id = ? WHERE company_id = ?`,
+    [booth_id, company_id]
+  );
+  console.log('✅ Companies table updated:', result1.affectedRows, 'rows');
+  
+  // Update Booths table to link company to booth
+  const [result2] = await pool.execute(
+    `UPDATE Booths SET assigned_to_company = ? WHERE booth_id = ?`,
+    [company_id, booth_id]
+  );
+  console.log('✅ Booths table updated:', result2.affectedRows, 'rows');
+  
+  if (result2.affectedRows === 0) {
+    console.error('❌ No booth found with booth_id:', booth_id);
+  }
+};
+
+export const unassignBoothFromCompany = async (company_id) => {
+  // Update Booths table first (remove company assignment)
+  await pool.execute(
+    `UPDATE Booths SET assigned_to_company = NULL WHERE assigned_to_company = ?`,
+    [company_id]
+  );
+  
+  // Update Companies table
+  await pool.execute(
+    `UPDATE Companies SET booth_id = NULL WHERE company_id = ?`,
+    [company_id]
+  );
 };

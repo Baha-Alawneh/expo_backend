@@ -68,6 +68,58 @@ export const getAllCompaniesController = async (req, res) => {
 };
 
 // ================================================
+// =============== GET COMPANY BY ID ==============
+// ================================================
+export const getCompanyByIdController = async (req, res) => {
+  try {
+    const { company_id } = req.params;
+
+    if (!company_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID is required"
+      });
+    }
+
+    const company = await Company.getCompanyByCompanyId(company_id);
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: "Company not found"
+      });
+    }
+
+    // Generate signed URL for profile image
+    if (company.profile_image) {
+      try {
+        const command = new GetObjectCommand({
+          Bucket: process.env.S3_BUCKET_NAME,
+          Key: company.profile_image,
+        });
+        company.profile_image_url = await getSignedUrlSDK(s3, command, {
+          expiresIn: 3600,
+        });
+      } catch (error) {
+        console.error("Error generating signed URL:", error);
+        company.profile_image_url = null;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: company
+    });
+  } catch (error) {
+    console.error("Error fetching company by ID:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching company"
+    });
+  }
+};
+
+// ================================================
 // =============== GET COMPANY ====================
 // ================================================
 export const getCompanyController = async (req, res) => {
@@ -428,6 +480,51 @@ export const updateOfferingController = async (req, res) => {
 };
 
 // ================================================
+// =============== BOOTH ASSIGNMENT ===============
+// ================================================
+
+// Get unassigned companies
+export const getUnassignedCompaniesController = async (req, res) => {
+  try {
+    const companies = await Company.getUnassignedCompanies();
+    res.json({
+      success: true,
+      data: companies,
+      count: companies.length,
+    });
+  } catch (error) {
+    console.error("Error fetching unassigned companies:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching unassigned companies",
+    });
+  }
+};
+
+// Assign booth to company
+export const assignBoothToCompanyController = async (req, res) => {
+  try {
+    const { company_id } = req.params;
+    const { booth_id } = req.body;
+
+    if (!company_id || !booth_id) {
+      return res.status(400).json({
+        success: false,
+        message: "company_id and booth_id are required",
+      });
+    }
+
+    await Company.assignBoothToCompany(company_id, booth_id);
+
+    res.json({
+      success: true,
+      message: "Booth assigned to company successfully",
+    });
+  } catch (error) {
+    console.error("Error assigning booth to company:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error assigning booth to company",
 // ========= GET ALL OFFERINGS (WITH SORTING) =====
 // ================================================
 export const getAllOfferingsController = async (req, res) => {
@@ -476,6 +573,22 @@ export const getAllOfferingsController = async (req, res) => {
   }
 };
 
+// Unassign booth from company
+export const unassignBoothFromCompanyController = async (req, res) => {
+  try {
+    const { company_id } = req.params;
+
+    await Company.unassignBoothFromCompany(company_id);
+
+    res.json({
+      success: true,
+      message: "Booth unassigned from company successfully",
+    });
+  } catch (error) {
+    console.error("Error unassigning booth from company:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error unassigning booth from company",
 // ================================================
 // ============= UPLOAD OFFERING IMAGES ===========
 // ================================================

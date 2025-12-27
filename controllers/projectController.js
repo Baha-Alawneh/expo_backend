@@ -1,10 +1,4 @@
-import {
-  getProjectByStudentId,
-  createProject,
-  updateProject,
-  getAllProjects,
-  getProjectsExceptStudentId,
-} from "../models/Project.js";
+import * as Project from "../models/Project.js";
 import { getStudentById } from "../models/Student.js";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl as getSignedUrlSDK } from "@aws-sdk/s3-request-presigner";
@@ -36,7 +30,7 @@ export const getProjectController = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "Student not found" });
-    const project = await getProjectByStudentId(student.student_id);
+    const project = await Project.getProjectByStudentId(student.student_id);
 
     if (!project)
       return res
@@ -69,6 +63,55 @@ export const getProjectController = async (req, res) => {
     res.json({ success: true, data: project });
   } catch (error) {
     console.error("Error fetching project:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching project",
+    });
+  }
+};
+
+// GET /projects/:project_id - Get project by project_id
+export const getProjectByIdController = async (req, res) => {
+  try {
+    const { project_id } = req.params;
+    if (!project_id)
+      return res
+        .status(400)
+        .json({ success: false, message: "Project ID is required" });
+
+    const project = await Project.getProjectById(project_id);
+
+    if (!project)
+      return res
+        .status(404)
+        .json({ success: false, message: "Project not found" });
+
+    // Generate signed URLs for images
+    if (
+      project.project_photos &&
+      Array.isArray(project.project_photos) &&
+      project.project_photos.length > 0
+    ) {
+      const signedImageUrls = await Promise.all(
+        project.project_photos.map(async (imageKey) => {
+          try {
+            const command = new GetObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME,
+              Key: imageKey,
+            });
+            return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+          } catch (err) {
+            console.error("Error generating signed URL for:", imageKey, err);
+            return null;
+          }
+        })
+      );
+      project.project_photos = signedImageUrls.filter(Boolean);
+    }
+
+    res.json({ success: true, data: project });
+  } catch (error) {
+    console.error("Error fetching project by ID:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching project",
@@ -288,7 +331,7 @@ export const postProjectController = async (req, res) => {
     if (existingProject) {
       throw new Error("Student already has a project. Use update instead.");
     }
-    const project = await createProject(student.student_id, data);
+    const project = await Project.createProject(student.student_id, data);
     let message = "Project created successfully";
     if (data.partner_email && !project.partnerExists) {
       message += ",(Partner email not found, project created only for you)";
@@ -333,7 +376,7 @@ export const updateProjectController = async (req, res) => {
         .json({ success: false, message: "Student not found" });
 
     const data = req.body;
-    const project = await updateProject(student.student_id, data);
+    const project = await Project.updateProject(student.student_id, data);
     res.json({
       success: true,
       message: "Project updated successfully",
@@ -445,6 +488,76 @@ export const uploadProjectImagesController = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error uploading project images",
+    });
+  }
+};
+
+// ================================================
+// =============== BOOTH ASSIGNMENT ===============
+// ================================================
+
+// Get unassigned projects
+export const getUnassignedProjectsController = async (req, res) => {
+  try {
+    const projects = await Project.getUnassignedProjects();
+    res.json({
+      success: true,
+      data: projects,
+      count: projects.length,
+    });
+  } catch (error) {
+    console.error("Error fetching unassigned projects:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching unassigned projects",
+    });
+  }
+};
+
+// Assign booth to project
+export const assignBoothToProjectController = async (req, res) => {
+  try {
+    const { project_id } = req.params;
+    const { booth } = req.body;
+
+    if (!project_id || !booth) {
+      return res.status(400).json({
+        success: false,
+        message: "project_id and booth are required",
+      });
+    }
+
+    await Project.assignBoothToProject(project_id, booth);
+
+    res.json({
+      success: true,
+      message: "Booth assigned to project successfully",
+    });
+  } catch (error) {
+    console.error("Error assigning booth to project:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error assigning booth to project",
+    });
+  }
+};
+
+// Unassign booth from project
+export const unassignBoothFromProjectController = async (req, res) => {
+  try {
+    const { project_id } = req.params;
+
+    await Project.unassignBoothFromProject(project_id);
+
+    res.json({
+      success: true,
+      message: "Booth unassigned from project successfully",
+    });
+  } catch (error) {
+    console.error("Error unassigning booth from project:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error unassigning booth from project",
     });
   }
 };

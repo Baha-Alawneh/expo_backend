@@ -74,6 +74,70 @@ export const getStudentById = async (user_id) => {
     },
   };
 };
+
+export const getStudentByStudentId = async (student_id) => {
+  if (!student_id) throw new Error("student_id is required");
+
+  const [rows] = await pool.execute(
+    `SELECT 
+        s.student_id,
+        s.user_id,
+        s.university_id,
+        s.major,
+        s.year_of_study AS year,
+        s.skills,
+        s.bio,
+        s.photo_name,
+        s.cv_name,
+        u.name,
+        u.email,
+        p.title AS project_title,
+        p.booth AS project_booth
+     FROM Students AS s
+     JOIN Users AS u ON s.user_id = u.user_id
+     LEFT JOIN ProjectMembers AS pm ON s.student_id = pm.student_id
+     LEFT JOIN Projects AS p ON pm.project_id = p.project_id
+     WHERE s.student_id = ?`,
+    [student_id]
+  );
+
+  if (rows.length === 0) return null;
+  const student = rows[0];
+  let skills = [];
+
+  if (student.skills) {
+    if (typeof student.skills === "string") {
+      try {
+        const parsed = JSON.parse(student.skills);
+        skills = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        skills = [];
+      }
+    } else if (Array.isArray(student.skills)) {
+      skills = student.skills;
+    } else {
+      skills = [];
+    }
+  }
+
+  return {
+    student_id: student.student_id,
+    user_id: student.user_id,
+    university_id: student.university_id || "",
+    name: student.name || "",
+    email: student.email || "",
+    major: student.major || "",
+    year: student.year || "",
+    skills,
+    bio: student.bio || "",
+    photo_name: student.photo_name || null,
+    cv_name: student.cv_name || null,
+    project: {
+      title: student.project_title || "",
+      booth: student.project_booth || "",
+    },
+  };
+};
 export const getStudentByEmail = async (email) => {
   if (!email) throw new Error("email is required");
 

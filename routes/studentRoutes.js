@@ -1,6 +1,7 @@
 import express from "express";
 import {
   getStudentController,
+  getStudentByStudentIdController,
   updateStudentController,
   uploadStudentFilesController,
   deleteStudentFileController,
@@ -18,6 +19,13 @@ router.get(
   "/",
   authenticateToken,
   getAllStudentsController
+);
+
+// Get student by student_id (for viewing other students' profiles)
+router.get(
+  "/:student_id",
+  authenticateToken,
+  getStudentByStudentIdController
 );
 
 router.get(

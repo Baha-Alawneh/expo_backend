@@ -2,6 +2,7 @@ import express from "express";
 import {
   getAllCompaniesController,
   getCompanyController,
+  getCompanyByIdController,
   updateCompanyController,
   uploadCompanyFileController,
   deleteCompanyFileController,
@@ -9,6 +10,9 @@ import {
   getOfferingByCompanyIdController,
   createOfferingController,
   updateOfferingController,
+  getUnassignedCompaniesController,
+  assignBoothToCompanyController,
+  unassignBoothFromCompanyController,
   getAllOfferingsController,
   uploadOfferingImagesController,
 } from "../controllers/companyController.js";
@@ -20,6 +24,13 @@ const router = express.Router();
 
 // Get all companies (for Companies tab)
 router.get("/", authenticateToken, getAllCompaniesController);
+
+// Get company by company_id
+router.get(
+  "/:company_id",
+  authenticateToken,
+  getCompanyByIdController
+);
 
 // Get company profile by user_id
 router.get("/profile/:user_id", authenticateToken, getCompanyController);
@@ -85,6 +96,10 @@ router.put(
   updateOfferingController
 );
 
+// Booth assignment routes
+router.get("/unassigned", authenticateToken, getUnassignedCompaniesController);
+router.patch("/:company_id/assign-booth", authenticateToken, assignBoothToCompanyController);
+router.patch("/:company_id/unassign-booth", authenticateToken, unassignBoothFromCompanyController);
 // Upload offering images
 router.post(
   "/offering/:user_id/upload",
