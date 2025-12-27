@@ -56,7 +56,7 @@ export const rateLimiter = (options = {}) => {
 
 export const strictRateLimiter = rateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 requests per 15 minutes
+  max: 50, // 50 requests per 15 minutes
   message: "Too many attempts, please try again later",
 });
 

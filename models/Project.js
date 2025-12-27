@@ -56,6 +56,7 @@ export const createProject = async (student_id, data) => {
     project_photos,
     github_link,
     partner_email,
+    type,
   } = data;
 
   let partner_id = null;
@@ -79,8 +80,8 @@ export const createProject = async (student_id, data) => {
     //create project
     await connection.execute(
       `INSERT INTO Projects 
-       (project_id, title, description, video_url, github_link, project_photos)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+       (project_id, title, description, video_url, github_link, project_photos, type)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         project_id,
         title || null,
@@ -88,6 +89,7 @@ export const createProject = async (student_id, data) => {
         video_url || null,
         github_link || null,
         project_photos ? JSON.stringify(project_photos) : null,
+        type || null,
       ]
     );
 
@@ -253,7 +255,8 @@ export const getAllProjects = async (sortBy = null, sortOrder = "DESC") => {
     orderByClause = "ORDER BY created_at DESC";
   }
 
-  const [rows] = await pool.execute(`SELECT * FROM Projects ${orderByClause}`);
+  // Only fetch approved projects
+  const [rows] = await pool.execute(`SELECT * FROM Projects WHERE status = 'approved' ${orderByClause}`);
 
   // For each project, get the students associated with it and ratings
   const projectsWithStudents = await Promise.all(

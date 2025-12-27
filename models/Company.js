@@ -18,7 +18,6 @@ export const getCompanyById = async (user_id) => {
         c.company_id,
         c.user_id,
         c.company_name,
-        c.category,
         c.description,
         c.phone,
         c.address,
@@ -42,8 +41,6 @@ export const getCompanyById = async (user_id) => {
     name: company.name || "",
     email: company.email || "",
     company_name: company.company_name || "",
-    type: company.type || "",
-    category: company.category || "",
     description: company.description || "",
     company_email: company.company_email || "",
     phone: company.phone || "",
@@ -62,7 +59,6 @@ export const getCompanyByEmail = async (email) => {
         c.company_id,
         c.user_id,
         c.company_name,
-        c.category,
         c.description,
         c.phone,
         c.address,
@@ -86,7 +82,6 @@ export const getCompanyByEmail = async (email) => {
     name: company.name || "",
     email: company.email || "",
     company_name: company.company_name || "",
-    category: company.category || "",
     description: company.description || "",
     company_email: company.company_email || "",
     phone: company.phone || "",
@@ -98,7 +93,7 @@ export const getCompanyByEmail = async (email) => {
 };
 
 export const updateCompanyById = async (user_id, data) => {
-  const { company_name, phone, address, description, website_url, category } =
+  const { company_name, phone, address, description, website_url } =
     data;
 
   console.log("Model updateCompanyById - Received data:", {
@@ -107,7 +102,6 @@ export const updateCompanyById = async (user_id, data) => {
     address,
     description,
     website_url,
-    category,
     user_id,
   });
 
@@ -123,8 +117,7 @@ export const updateCompanyById = async (user_id, data) => {
         phone = ?,
         address = ?,
         description = ?,
-        website_url = ?,
-        category = ?
+        website_url = ?
        WHERE user_id = ?`,
       [
         company_name,
@@ -132,7 +125,6 @@ export const updateCompanyById = async (user_id, data) => {
         address,
         description,
         website_url,
-        category,
         user_id,
       ]
     );
@@ -168,7 +160,6 @@ export const getAllCompanies = async () => {
       company_id,
       user_id,
       company_name,
-      category,
       description,
       phone,
       booth_id,

@@ -121,6 +121,9 @@ export const createFeedback = async (data) => {
   const feedback_id = uuidv4();
   const now = new Date();
 
+  // Normalize empty/whitespace comments to null
+  const normalizedComment = comment && comment.trim() !== "" ? comment.trim() : null;
+
   await pool.execute(
     `INSERT INTO Feedback 
      (feedback_id, user_id, entity_id, entity_type, rating, comment, created_at, updated_at)
@@ -131,7 +134,7 @@ export const createFeedback = async (data) => {
       entity_id,
       entity_type,
       rating,
-      comment || null,
+      normalizedComment,
       now,
       now,
     ]
@@ -163,8 +166,10 @@ export const updateFeedback = async (feedback_id, data) => {
   }
 
   if (comment !== undefined) {
+    // Normalize empty/whitespace comments to null
+    const normalizedComment = comment && comment.trim() !== "" ? comment.trim() : null;
     updates.push("comment = ?");
-    values.push(comment);
+    values.push(normalizedComment);
   }
 
   updates.push("updated_at = ?");
