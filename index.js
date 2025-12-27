@@ -35,6 +35,7 @@ import userRoutes from "./routes/userRoutes.js";
 import studentRoutes from "./routes/studentRoutes.js";
 import projectRoutes from "./routes/projectRouts.js";
 import companyRoutes from "./routes/companyRoutes.js";
+import boothRoutes from "./routes/boothRoutes.js";
 
 const app = express();
 
@@ -56,6 +57,7 @@ app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/students", studentRoutes);
 app.use("/api/v1/projects", projectRoutes);
 app.use("/api/v1/companies", companyRoutes);
+app.use("/api/v1", boothRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {

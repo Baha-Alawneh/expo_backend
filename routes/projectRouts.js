@@ -1,11 +1,15 @@
 import express from "express";
 import {
   getProjectController,
+  getProjectByIdController,
   updateProjectController,
   postProjectController,
   uploadProjectImagesController,
   getAllProjectsController,
   getAllExceptMyProjectController,
+  getUnassignedProjectsController,
+  assignBoothToProjectController,
+  unassignBoothFromProjectController,
 } from "../controllers/projectController.js";
 import { upload } from "../config/multer.js";
 import { authenticateToken, authorizeUser } from "../middleware/auth.js";
@@ -19,6 +23,13 @@ router.get(
   "/",
   authenticateToken,
   getAllProjectsController
+);
+
+// Get project by project_id
+router.get(
+  "/:project_id",
+  authenticateToken,
+  getProjectByIdController
 );
 
 router.get(
@@ -61,5 +72,10 @@ router.get(
   authorizeUser,
   getAllExceptMyProjectController
 );
+
+// Booth assignment routes
+router.get("/unassigned", authenticateToken, getUnassignedProjectsController);
+router.patch("/:project_id/assign-booth", authenticateToken, assignBoothToProjectController);
+router.patch("/:project_id/unassign-booth", authenticateToken, unassignBoothFromProjectController);
 
 export default router;

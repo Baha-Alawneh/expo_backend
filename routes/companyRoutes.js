@@ -2,6 +2,7 @@ import express from "express";
 import {
   getAllCompaniesController,
   getCompanyController,
+  getCompanyByIdController,
   updateCompanyController,
   uploadCompanyFileController,
   deleteCompanyFileController,
@@ -9,6 +10,9 @@ import {
   getOfferingByCompanyIdController,
   createOfferingController,
   updateOfferingController,
+  getUnassignedCompaniesController,
+  assignBoothToCompanyController,
+  unassignBoothFromCompanyController,
 } from "../controllers/companyController.js";
 import { upload } from "../config/multer.js";
 import { authenticateToken, authorizeUser } from "../middleware/auth.js";
@@ -18,6 +22,13 @@ const router = express.Router();
 
 // Get all companies (for Companies tab)
 router.get("/", authenticateToken, getAllCompaniesController);
+
+// Get company by company_id
+router.get(
+  "/:company_id",
+  authenticateToken,
+  getCompanyByIdController
+);
 
 // Get company profile by user_id
 router.get(
@@ -84,5 +95,10 @@ router.put(
   authorizeUser,
   updateOfferingController
 );
+
+// Booth assignment routes
+router.get("/unassigned", authenticateToken, getUnassignedCompaniesController);
+router.patch("/:company_id/assign-booth", authenticateToken, assignBoothToCompanyController);
+router.patch("/:company_id/unassign-booth", authenticateToken, unassignBoothFromCompanyController);
 
 export default router;

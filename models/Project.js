@@ -1,6 +1,50 @@
 import pool from "../config/db.js";
 import { v4 as uuidv4 } from "uuid";
 import { getStudentByEmail } from "./Student.js";
+
+// Get project by project_id
+export const getProjectById = async (project_id) => {
+  const [projectRows] = await pool.execute(
+    `SELECT p.* 
+     FROM Projects p
+     WHERE p.project_id = ?`,
+    [project_id]
+  );
+
+  if (projectRows.length === 0) return null;
+
+  const project = projectRows[0];
+
+  // get all students associated with the project
+  const [studentRows] = await pool.execute(
+    `SELECT s.student_id, s.major, s.year_of_study, u.name, u.email, s.photo_name
+     FROM ProjectMembers pm
+     JOIN Students s ON pm.student_id = s.student_id
+     JOIN Users u ON s.user_id = u.user_id
+     WHERE pm.project_id = ?`,
+    [project.project_id]
+  );
+
+  // Parse project_photos JSON
+  let images = [];
+  if (project.project_photos) {
+    try {
+      images = JSON.parse(project.project_photos);
+      if (!Array.isArray(images)) images = [];
+    } catch (e) {
+      images = [];
+    }
+  }
+
+  // return project with images, status, and associated students
+  return {
+    ...project,
+    images,
+    status: project.status || "pending",
+    students: studentRows,
+  };
+};
+
 // Get project by project_id
 export const getProjectByStudentId = async (student_id) => {
   const [projectRows] = await pool.execute(
@@ -264,4 +308,62 @@ export const getAllProjects = async () => {
       video_url: project.video_url || null,
     };
   });
+};
+
+// ================================================
+// =============== BOOTH ASSIGNMENT ===============
+// ================================================
+
+export const getUnassignedProjects = async () => {
+  const [rows] = await pool.execute(
+    `SELECT 
+      project_id,
+      title,
+      type,
+      description,
+      status,
+      github_link,
+      video_url
+    FROM Projects
+    WHERE (booth IS NULL OR booth = '') AND status = 'approved'
+    ORDER BY title ASC`
+  );
+
+  return rows;
+};
+
+export const assignBoothToProject = async (project_id, booth_label) => {
+  console.log('🎯 Assigning booth to project:', { project_id, booth_label });
+  
+  // Update Projects table
+  const [result1] = await pool.execute(
+    `UPDATE Projects SET booth = ? WHERE project_id = ?`,
+    [booth_label, project_id]
+  );
+  console.log('✅ Projects table updated:', result1.affectedRows, 'rows');
+  
+  // Update Booths table to link project to booth
+  const [result2] = await pool.execute(
+    `UPDATE Booths SET assigned_to_project = ? WHERE booth_number = ?`,
+    [project_id, booth_label]
+  );
+  console.log('✅ Booths table updated:', result2.affectedRows, 'rows');
+  
+  if (result2.affectedRows === 0) {
+    console.error('❌ No booth found with booth_number:', booth_label);
+  }
+};
+
+export const unassignBoothFromProject = async (project_id) => {
+  // Update Booths table first (remove project assignment)
+  await pool.execute(
+    `UPDATE Booths SET assigned_to_project = NULL WHERE assigned_to_project = ?`,
+    [project_id]
+  );
+  
+  // Update Projects table
+  await pool.execute(
+    `UPDATE Projects SET booth = NULL WHERE project_id = ?`,
+    [project_id]
+  );
 };

@@ -71,6 +71,49 @@ export const getStudentController = async (req, res) => {
 };
 
 // ================================================
+// ========= GET STUDENT BY STUDENT ID ============
+// ================================================
+export const getStudentByStudentIdController = async (req, res) => {
+  try {
+    const { student_id } = req.params;
+
+    // Fetch student by student_id
+    const student = await Student.getStudentByStudentId(student_id);
+
+    if (!student)
+      return res
+        .status(404)
+        .json({ success: false, message: "Student not found" });
+
+    // Generate signed URLs for photo and CV if they exist
+    if (student.photo_name) {
+      const photoCommand = new GetObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Key: student.photo_name,
+      });
+      student.photo_url = await getSignedUrlSDK(s3, photoCommand, {
+        expiresIn: 3600,
+      });
+    }
+
+    if (student.cv_name) {
+      const cvCommand = new GetObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Key: student.cv_name,
+      });
+      student.cv_url = await getSignedUrlSDK(s3, cvCommand, {
+        expiresIn: 3600,
+      });
+    }
+
+    res.json({ success: true, data: student });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Error fetching student" });
+  }
+};
+
+// ================================================
 // =============== UPDATE STUDENT =================
 // ================================================
 export const updateStudentController = async (req, res) => {
