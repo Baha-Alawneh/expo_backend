@@ -1,0 +1,1023 @@
+import pool from "../config/db.js";
+import { v4 as uuidv4 } from "uuid";
+import firebaseApp from "../config/firebase.js";
+import admin from "firebase-admin";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl as getSignedUrlSDK } from "@aws-sdk/s3-request-presigner";
+
+// Initialize S3 client
+const s3 = new S3Client({
+  region: process.env.AWS_REGION || "us-east-1",
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
+
+// Get Dashboard Statistics
+export const getDashboardStats = async (req, res) => {
+  try {
+    // Get project statistics
+    const [projectStats] = await pool.execute(`
+      SELECT 
+        COUNT(*) as total_projects,
+        SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_projects,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_projects,
+        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_projects
+      FROM Projects
+    `);
+
+    // Get company count (Companies table has no status column)
+    const [companyCount] = await pool.execute(`
+      SELECT COUNT(*) as total_companies FROM Companies
+    `);
+
+    // Get offering statistics (status column exists in Offering table)
+    const [offeringStats] = await pool.execute(`
+      SELECT 
+        COUNT(*) as total_offerings,
+        SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_offerings,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_offerings,
+        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_offerings
+      FROM Offering
+    `);
+
+    // Get student count
+    const [studentCount] = await pool.execute(`
+      SELECT COUNT(*) as total_students FROM Students
+    `);
+
+    // Get visitor count from Users table by role
+    const [visitorCount] = await pool.execute(`
+      SELECT COUNT(*) as total_visitors FROM Users WHERE role = 'visitor'
+    `);
+
+    // Get recent activity (last 7 days)
+    const [recentProjects] = await pool.execute(`
+      SELECT COUNT(*) as recent_projects 
+      FROM Projects 
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+    `);
+
+    const [recentOffers] = await pool.execute(`
+      SELECT COUNT(*) as recent_offers 
+      FROM Offering 
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+    `);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        projects: {
+          total: projectStats[0].total_projects,
+          approved: projectStats[0].approved_projects,
+          pending: projectStats[0].pending_projects,
+          rejected: projectStats[0].rejected_projects,
+        },
+        companies: {
+          total: companyCount[0].total_companies,
+        },
+        offerings: {
+          total: offeringStats[0].total_offerings,
+          approved: offeringStats[0].approved_offerings,
+          pending: offeringStats[0].pending_offerings,
+          rejected: offeringStats[0].rejected_offerings,
+        },
+        students: {
+          total: studentCount[0].total_students,
+        },
+        visitors: {
+          total: visitorCount[0].total_visitors,
+        },
+        recentActivity: {
+          projects: recentProjects[0].recent_projects,
+          offers: recentOffers[0].recent_offers,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching dashboard stats:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch dashboard statistics",
+    });
+  }
+};
+
+// Get All Pending Projects
+export const getPendingProjects = async (req, res) => {
+  try {
+    const [projects] = await pool.execute(`
+      SELECT DISTINCT
+        p.*,
+        (SELECT u.name FROM ProjectMembers pm 
+         JOIN Students s ON pm.student_id = s.student_id 
+         JOIN Users u ON s.user_id = u.user_id 
+         WHERE pm.project_id = p.project_id 
+         LIMIT 1) as student_name,
+        (SELECT u.email FROM ProjectMembers pm 
+         JOIN Students s ON pm.student_id = s.student_id 
+         JOIN Users u ON s.user_id = u.user_id 
+         WHERE pm.project_id = p.project_id 
+         LIMIT 1) as student_email,
+        (SELECT s.student_id FROM ProjectMembers pm 
+         JOIN Students s ON pm.student_id = s.student_id 
+         WHERE pm.project_id = p.project_id 
+         LIMIT 1) as student_id,
+        (SELECT u.user_id FROM ProjectMembers pm 
+         JOIN Students s ON pm.student_id = s.student_id 
+         JOIN Users u ON s.user_id = u.user_id 
+         WHERE pm.project_id = p.project_id 
+         LIMIT 1) as user_id
+      FROM Projects p
+      WHERE p.status = 'pending'
+      ORDER BY p.created_at DESC
+    `);
+
+    // Parse project photos and generate signed URLs for each project
+    const projectsWithImages = await Promise.all(
+      projects.map(async (project) => {
+        // Debug: Log raw project data from database
+        console.log("Raw project from DB:", {
+          project_id: project.project_id,
+          project_title: project.project_title,
+          project_description: project.project_description,
+          title: project.title,
+          description: project.description,
+          all_columns: Object.keys(project),
+        });
+        
+        let images = [];
+        
+        // Parse project_photos - handle both JSON string and already-parsed array
+        if (project.project_photos) {
+          try {
+            let parsedPhotos;
+            
+            // Check if it's already an array
+            if (Array.isArray(project.project_photos)) {
+              parsedPhotos = project.project_photos;
+            } 
+            // Check if it's a string that needs parsing
+            else if (typeof project.project_photos === "string") {
+              // Try to parse as JSON
+              parsedPhotos = JSON.parse(project.project_photos);
+            } 
+            // Handle object case
+            else if (typeof project.project_photos === "object") {
+              parsedPhotos = [project.project_photos];
+            }
+            
+            if (Array.isArray(parsedPhotos) && parsedPhotos.length > 0) {
+              // Generate signed URLs for S3 images
+              const signedUrls = await Promise.all(
+                parsedPhotos.map(async (imageKey) => {
+                  try {
+                    // Skip if not a valid S3 key
+                    if (!imageKey || typeof imageKey !== "string") {
+                      console.warn("Invalid image key:", imageKey);
+                      return null;
+                    }
+                    
+                    const command = new GetObjectCommand({
+                      Bucket: process.env.S3_BUCKET_NAME,
+                      Key: imageKey,
+                    });
+                    return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+                  } catch (err) {
+                    console.error("Error generating signed URL:", imageKey, err.message);
+                    return null;
+                  }
+                })
+              );
+              images = signedUrls.filter(Boolean);
+            }
+          } catch (e) {
+            console.error("Error processing project_photos:", e.message, "Value:", project.project_photos);
+            images = [];
+          }
+        }
+        
+        return {
+          project_id: project.project_id,
+          title: project.title,  // Use 'title' from database, not 'project_title'
+          description: project.description,  // Use 'description' from database, not 'project_description'
+          booth: project.booth,
+          github_link: project.github_link,
+          video_url: project.video_url,
+          category: project.category,
+          location: project.location,
+          status: project.status,
+          created_at: project.created_at,
+          average_rating: project.average_rating || 0,
+          total_ratings: project.total_ratings || 0,
+          student_name: project.student_name,
+          student_email: project.student_email,
+          images: images,
+          project_photos: images,
+          students: [
+            {
+              student_id: project.student_id,
+              user_id: project.user_id,
+              name: project.student_name,
+              email: project.student_email,
+            },
+          ],
+        };
+      })
+    );
+
+    // Deduplicate projects by project_id to ensure no duplicates
+    const uniqueProjects = Array.from(
+      new Map(projectsWithImages.map(p => [p.project_id, p])).values()
+    );
+
+    console.log(`Total projects fetched: ${projects.length}, Unique projects: ${uniqueProjects.length}`);
+
+    res.status(200).json({
+      success: true,
+      data: uniqueProjects,
+    });
+  } catch (error) {
+    console.error("Error fetching pending projects:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch pending projects",
+    });
+  }
+};
+
+// Get Projects by Status (pending, approved, rejected)
+export const getProjectsByStatus = async (req, res) => {
+  try {
+    const { status } = req.params;
+
+    // Validate status
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status. Must be 'pending', 'approved', or 'rejected'",
+      });
+    }
+
+    const [projects] = await pool.execute(`
+      SELECT DISTINCT
+        p.*,
+        (SELECT u.name FROM ProjectMembers pm 
+         JOIN Students s ON pm.student_id = s.student_id 
+         JOIN Users u ON s.user_id = u.user_id 
+         WHERE pm.project_id = p.project_id 
+         LIMIT 1) as student_name,
+        (SELECT u.email FROM ProjectMembers pm 
+         JOIN Students s ON pm.student_id = s.student_id 
+         JOIN Users u ON s.user_id = u.user_id 
+         WHERE pm.project_id = p.project_id 
+         LIMIT 1) as student_email,
+        (SELECT s.student_id FROM ProjectMembers pm 
+         JOIN Students s ON pm.student_id = s.student_id 
+         WHERE pm.project_id = p.project_id 
+         LIMIT 1) as student_id,
+        (SELECT u.user_id FROM ProjectMembers pm 
+         JOIN Students s ON pm.student_id = s.student_id 
+         JOIN Users u ON s.user_id = u.user_id 
+         WHERE pm.project_id = p.project_id 
+         LIMIT 1) as user_id
+      FROM Projects p
+      WHERE p.status = ?
+      ORDER BY p.created_at DESC
+    `, [status]);
+
+    // Parse project photos and generate signed URLs for each project
+    const projectsWithImages = await Promise.all(
+      projects.map(async (project) => {
+        let images = [];
+        
+        if (project.project_photos) {
+          try {
+            let parsedPhotos;
+            
+            if (Array.isArray(project.project_photos)) {
+              parsedPhotos = project.project_photos;
+            } else if (typeof project.project_photos === "string") {
+              parsedPhotos = JSON.parse(project.project_photos);
+            } else if (typeof project.project_photos === "object") {
+              parsedPhotos = [project.project_photos];
+            }
+            
+            if (Array.isArray(parsedPhotos) && parsedPhotos.length > 0) {
+              const signedUrls = await Promise.all(
+                parsedPhotos.map(async (imageKey) => {
+                  try {
+                    if (!imageKey || typeof imageKey !== "string") {
+                      return null;
+                    }
+                    
+                    const command = new GetObjectCommand({
+                      Bucket: process.env.S3_BUCKET_NAME,
+                      Key: imageKey,
+                    });
+                    return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+                  } catch (err) {
+                    console.error("Error generating signed URL:", imageKey, err.message);
+                    return null;
+                  }
+                })
+              );
+              images = signedUrls.filter(Boolean);
+            }
+          } catch (e) {
+            console.error("Error processing project_photos:", e.message);
+            images = [];
+          }
+        }
+        
+        return {
+          project_id: project.project_id,
+          title: project.title,
+          description: project.description,
+          booth: project.booth,
+          github_link: project.github_link,
+          video_url: project.video_url,
+          category: project.category,
+          location: project.location,
+          status: project.status,
+          created_at: project.created_at,
+          average_rating: project.average_rating || 0,
+          total_ratings: project.total_ratings || 0,
+          student_name: project.student_name,
+          student_email: project.student_email,
+          images: images,
+          project_photos: images,
+          students: [
+            {
+              student_id: project.student_id,
+              user_id: project.user_id,
+              name: project.student_name,
+              email: project.student_email,
+            },
+          ],
+        };
+      })
+    );
+
+    const uniqueProjects = Array.from(
+      new Map(projectsWithImages.map(p => [p.project_id, p])).values()
+    );
+
+    res.status(200).json({
+      success: true,
+      data: uniqueProjects,
+    });
+  } catch (error) {
+    console.error(`Error fetching ${status} projects:`, error);
+    res.status(500).json({
+      success: false,
+      message: `Failed to fetch ${status} projects`,
+    });
+  }
+};
+
+// Approve/Reject Project
+export const updateProjectStatus = async (req, res) => {
+  try {
+    const { project_id } = req.params;
+    const { status } = req.body; // 'approved' or 'rejected'
+
+    if (!["approved", "rejected"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status. Must be 'approved' or 'rejected'",
+      });
+    }
+
+    await pool.execute(
+      `UPDATE Projects SET status = ? WHERE project_id = ?`,
+      [status, project_id]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Project ${status} successfully`,
+    });
+  } catch (error) {
+    console.error("Error updating project status:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update project status",
+    });
+  }
+};
+
+// Get All Pending Offerings
+export const getPendingOfferings = async (req, res) => {
+  try {
+    console.log('[Admin] Fetching pending offerings...');
+    const [offerings] = await pool.execute(`
+      SELECT 
+        o.*,
+        c.company_name,
+        u.email as company_email
+      FROM Offering o
+      LEFT JOIN Companies c ON o.company_id = c.company_id
+      LEFT JOIN Users u ON c.user_id = u.user_id
+      WHERE o.status = 'pending'
+      ORDER BY o.created_at DESC
+    `);
+
+    console.log(`[Admin] Found ${offerings.length} pending offerings`);
+
+    // Parse offering photos for each offering
+    const offeringsWithImages = offerings.map((offering) => {
+      let images = [];
+      if (offering.offering_photos) {
+        try {
+          // Check if already parsed (object) or needs parsing (string)
+          const parsedPhotos = typeof offering.offering_photos === 'string' 
+            ? JSON.parse(offering.offering_photos) 
+            : offering.offering_photos;
+          
+          // Extract URIs from image picker objects or use S3 keys directly
+          if (Array.isArray(parsedPhotos)) {
+            images = parsedPhotos.map(photo => {
+              // If it's an object with uri, extract the uri
+              if (typeof photo === 'object' && photo.uri) {
+                return photo.uri;
+              }
+              // If it's a string (S3 key), use it directly
+              if (typeof photo === 'string') {
+                return photo;
+              }
+              return null;
+            }).filter(Boolean);
+          }
+        } catch (e) {
+          images = [];
+        }
+      }
+      return {
+        ...offering,
+        images,
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: offeringsWithImages,
+    });
+  } catch (error) {
+    console.error("Error fetching pending offerings:", error);
+    console.error("Error details:", {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql,
+      stack: error.stack
+    });
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch pending offerings",
+      error: error.message,
+    });
+  }
+};
+
+// Get Offerings by Status (pending, approved, rejected)
+export const getOfferingsByStatus = async (req, res) => {
+  try {
+    const { status } = req.params;
+
+    console.log(`[Admin] Fetching offerings with status: ${status}`);
+
+    // Validate status
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status. Must be 'pending', 'approved', or 'rejected'",
+      });
+    }
+
+    const [offerings] = await pool.execute(`
+      SELECT 
+        o.*,
+        c.company_name,
+        c.profile_image,
+        u.email as company_email
+      FROM Offering o
+      LEFT JOIN Companies c ON o.company_id = c.company_id
+      LEFT JOIN Users u ON c.user_id = u.user_id
+      WHERE o.status = ?
+      ORDER BY o.created_at DESC
+    `, [status]);
+
+    // Process offering photos and generate S3 signed URLs for each offering
+    const offeringsWithImages = await Promise.all(
+      offerings.map(async (offering) => {
+        console.log('Processing offering:', offering.name);
+        console.log('Raw offering_photos from DB:', offering.offering_photos);
+        
+        let images = [];
+        if (offering.offering_photos) {
+          try {
+            // Check if already parsed (object) or needs parsing (string)
+            const parsedPhotos = typeof offering.offering_photos === 'string'
+              ? JSON.parse(offering.offering_photos)
+              : offering.offering_photos;
+            console.log('Parsed photos:', parsedPhotos);
+            
+            if (Array.isArray(parsedPhotos) && parsedPhotos.length > 0) {
+              // Process each photo - could be S3 key (string) or image picker object
+              const signedUrls = await Promise.all(
+                parsedPhotos.map(async (photo) => {
+                  try {
+                    // If it's a string, treat it as an S3 key
+                    if (typeof photo === 'string') {
+                      console.log('Generating signed URL for S3 key:', photo);
+                      const command = new GetObjectCommand({
+                        Bucket: process.env.S3_BUCKET_NAME,
+                        Key: photo,
+                      });
+                      const url = await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+                      console.log('Generated URL:', url);
+                      return url;
+                    } 
+                    // If it's an object (image picker metadata), extract the URI
+                    else if (typeof photo === 'object' && photo.uri) {
+                      console.log('Found image picker object, returning URI:', photo.uri);
+                      return photo.uri;
+                    }
+                    // Invalid format
+                    else {
+                      console.warn('Invalid photo format:', photo);
+                      return null;
+                    }
+                  } catch (err) {
+                    console.error("Error processing photo:", photo, err.message);
+                    return null;
+                  }
+                })
+              );
+              images = signedUrls.filter(Boolean);
+              console.log('Final images array:', images);
+            }
+          } catch (e) {
+            console.error("Error processing offering_photos:", e.message);
+            images = [];
+          }
+        }
+        
+        // Generate signed URL for company profile image
+        let profileImageUrl = null;
+        if (offering.profile_image) {
+          try {
+            const command = new GetObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME,
+              Key: offering.profile_image,
+            });
+            profileImageUrl = await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+          } catch (err) {
+            console.error("Error generating signed URL for profile image:", err.message);
+          }
+        }
+        
+        return {
+          offering_id: offering.offering_id,
+          name: offering.name,
+          description: offering.description,
+          price: offering.price,
+          status: offering.status,
+          created_at: offering.created_at,
+          company_id: offering.company_id,
+          company_name: offering.company_name,
+          company_email: offering.company_email,
+          profile_image_url: profileImageUrl,
+          images: images,
+          offering_photos: images,
+        };
+      })
+    );
+
+    console.log(`[Admin] Returning ${offeringsWithImages.length} offerings`);
+
+    res.status(200).json({
+      success: true,
+      data: offeringsWithImages,
+    });
+  } catch (error) {
+    console.error(`Error fetching offerings with status ${req.params.status}:`, error);
+    console.error("Error details:", {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql,
+      stack: error.stack
+    });
+    res.status(500).json({
+      success: false,
+      message: `Failed to fetch offerings`,
+      error: error.message,
+    });
+  }
+};
+
+// Approve/Reject Offering
+export const updateOfferingStatus = async (req, res) => {
+  try {
+    const { offering_id } = req.params;
+    const { status } = req.body; // 'approved' or 'rejected'
+
+    if (!["approved", "rejected"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status. Must be 'approved' or 'rejected'",
+      });
+    }
+
+    await pool.execute(
+      `UPDATE Offering SET status = ?, updated_at = NOW() WHERE offering_id = ?`,
+      [status, offering_id]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Offering ${status} successfully`,
+    });
+  } catch (error) {
+    console.error("Error updating offering status:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update offering status",
+    });
+  }
+};
+
+// Send Notification via Firebase Cloud Messaging
+export const sendNotification = async (req, res) => {
+  try {
+    console.log("[Admin] sendNotification API called");
+    const { title, description, icon, target_type, target_email } = req.body;
+    console.log("[Admin] Request body:", { title, description, icon, target_type, target_email });
+
+    // Validate input
+    if (!title || !description || !icon || !target_type) {
+      return res.status(400).json({
+        success: false,
+        message: "Title, description, icon, and target type are required",
+      });
+    }
+
+    if (!["all", "students", "companies", "specific"].includes(target_type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid target type",
+      });
+    }
+
+    if (target_type === "specific" && !target_email) {
+      return res.status(400).json({
+        success: false,
+        message: "Target email is required for specific notifications",
+      });
+    }
+
+    let targetUsers = [];
+
+    // Determine target users based on target_type
+    if (target_type === "all") {
+      const [users] = await pool.execute(
+        `SELECT user_id, role FROM Users WHERE role IN ('student', 'company')`
+      );
+      targetUsers = users;
+    } else if (target_type === "students") {
+      const [users] = await pool.execute(
+        `SELECT user_id, role FROM Users WHERE role = 'student'`
+      );
+      targetUsers = users;
+    } else if (target_type === "companies") {
+      const [users] = await pool.execute(
+        `SELECT user_id, role FROM Users WHERE role = 'company'`
+      );
+      targetUsers = users;
+    } else if (target_type === "specific") {
+      const [users] = await pool.execute(
+        `SELECT user_id, role FROM Users WHERE email = ?`,
+        [target_email]
+      );
+      
+      if (users.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found with the provided email",
+        });
+      }
+      targetUsers = users;
+    }
+
+    // Check if Firebase is initialized
+    if (!firebaseApp) {
+      return res.status(500).json({
+        success: false,
+        message: "Firebase Admin SDK not initialized. Check server configuration.",
+      });
+    }
+
+    // Save notification to Firestore for each target user
+    const db = firebaseApp.firestore();
+    
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const notificationData = {
+      title,
+      message: description,
+      icon: icon || "notifications",
+      iconColor: getIconColor(icon),
+      type: getNotificationType(icon),
+      time: new Date().toISOString(),
+      read: false,
+      createdAt: timestamp,
+    };
+    
+    console.log("[Admin] Notification data:", notificationData);
+    console.log("[Admin] Sending to", targetUsers.length, "users");
+
+    // Save to Firestore for each target user
+    const savePromises = targetUsers.map((user) => {
+      console.log(`[Admin] Creating notification for user ${user.user_id}`);
+      return db
+        .collection("notifications")
+        .doc(user.user_id.toString())
+        .collection("userNotifications")
+        .add(notificationData);
+    });
+
+    await Promise.all(savePromises);
+    console.log("[Admin] All notifications saved to Firestore");
+
+    res.status(200).json({
+      success: true,
+      message: `Notification sent successfully to ${targetUsers.length} user(s)`,
+      data: {
+        recipients_count: targetUsers.length,
+      },
+    });
+  } catch (error) {
+    console.error("Error sending notification:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to send notification",
+    });
+  }
+};
+
+// Helper function to determine notification type based on icon
+function getNotificationType(icon) {
+  if (!icon) return "info";
+  
+  if (["checkmark-circle", "checkmark-done", "shield-checkmark"].includes(icon)) {
+    return "success";
+  }
+  if (["warning", "alert-circle", "alert", "flame"].includes(icon)) {
+    return "warning";
+  }
+  if (["close-circle", "remove-circle", "trash"].includes(icon)) {
+    return "error";
+  }
+  return "info";
+}
+
+// Helper function to get icon color
+function getIconColor(icon) {
+  if (!icon) return "#74B9FF"; // Default blue
+  
+  // Success/Approval - Green
+  if (["checkmark-circle", "checkmark-done", "shield-checkmark"].includes(icon)) {
+    return "#00B894";
+  }
+  
+  // Info/Message - Blue
+  if (["mail", "chatbubble", "information-circle", "notifications"].includes(icon)) {
+    return "#74B9FF";
+  }
+  
+  // Warning/Alert - Orange
+  if (["warning", "alert-circle", "alert", "flame"].includes(icon)) {
+    return "#FDCB6E";
+  }
+  
+  // Error/Rejection - Red
+  if (["close-circle", "remove-circle", "trash"].includes(icon)) {
+    return "#FF7675";
+  }
+  
+  // Megaphone/Announcement - Purple
+  if (icon === "megaphone") {
+    return "#6C5CE7";
+  }
+  
+  return "#74B9FF"; // Default blue
+}
+
+// Get all users for notification dropdown
+export const getAllUsers = async (req, res) => {
+  try {
+    const [users] = await pool.execute(`
+      SELECT user_id, name, email, role 
+      FROM Users 
+      ORDER BY name ASC
+    `);
+
+    res.status(200).json({
+      success: true,
+      data: users,
+    });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch users",
+    });
+  }
+};
+
+// Get user registrations over time for analytics
+export const getUserRegistrations = async (req, res) => {
+  try {
+    const { timeRange } = req.query; // 'week', 'month', or 'all'
+    
+    console.log(`[User Registrations] Time range requested: ${timeRange}`);
+    
+    let daysBack = null;
+    
+    if (timeRange === 'week') {
+      daysBack = 7;
+    } else if (timeRange === 'month') {
+      daysBack = 30;
+    }
+
+    if (daysBack) {
+      // For week/month view, return cumulative counts starting from zero
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysBack + 1); // Include today
+      
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const endDateStr = endDate.toISOString().split('T')[0];
+      
+      console.log(`[User Registrations] Date range: ${startDateStr} to ${endDateStr}`);
+      
+      // Get daily registrations grouped by date using DATE() to strip time from TIMESTAMP
+      // Only count registrations within the selected period
+      const [registrations] = await pool.execute(`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as daily_count
+        FROM Users
+        WHERE DATE(created_at) >= ? 
+          AND DATE(created_at) <= ?
+          AND role != 'admin'
+        GROUP BY DATE(created_at)
+        ORDER BY date ASC
+      `, [startDateStr, endDateStr]);
+      
+      console.log(`[User Registrations] Found ${registrations.length} days with registrations`);
+      
+      // Create map of daily counts for quick lookup
+      const dateMap = {};
+      registrations.forEach(reg => {
+        const dateKey = reg.date instanceof Date 
+          ? reg.date.toISOString().split('T')[0]
+          : reg.date;
+        dateMap[dateKey] = parseInt(reg.daily_count);
+      });
+      
+      // Generate complete date range with cumulative counts (starting from 0)
+      const result = [];
+      const currentDate = new Date(startDate);
+      let cumulativeCount = 0; // Start from zero for the selected period
+      
+      while (currentDate <= endDate) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        
+        // Add daily count if exists
+        if (dateMap[dateStr]) {
+          cumulativeCount += dateMap[dateStr];
+        }
+        
+        result.push({
+          date: dateStr,
+          count: cumulativeCount  // Cumulative count within period only
+        });
+        
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      console.log(`[User Registrations] Total registrations in period: ${cumulativeCount}`);
+      console.log(`[User Registrations] Returning ${result.length} data points (cumulative counts)`);
+      
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } else {
+      // For 'all' time view, return cumulative counts by date
+      const [registrations] = await pool.execute(`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as daily_count
+        FROM Users
+        WHERE role != 'admin'
+        GROUP BY DATE(created_at)
+        ORDER BY date ASC
+      `);
+      
+      console.log(`[User Registrations] All time - Found ${registrations.length} days with registrations`);
+      
+      // Calculate cumulative counts for all time view
+      let cumulativeCount = 0;
+      const result = registrations.map(reg => {
+        const dateStr = reg.date instanceof Date 
+          ? reg.date.toISOString().split('T')[0]
+          : reg.date;
+        cumulativeCount += parseInt(reg.daily_count);
+        return {
+          date: dateStr,
+          count: cumulativeCount  // Cumulative count for all time
+        };
+      });
+      
+      console.log(`[User Registrations] All time - Total users: ${cumulativeCount}`);
+      console.log(`[User Registrations] Returning ${result.length} data points (cumulative counts)`);
+      
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    }
+  } catch (error) {
+    console.error("Error fetching user registrations:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch user registrations",
+    });
+  }
+};
+
+// Get top 5 highest-rated projects
+export const getTopRatedProjects = async (req, res) => {
+  try {
+    const [projects] = await pool.execute(`
+      SELECT 
+        p.project_id,
+        p.title as project_title,
+        AVG(f.rating) as average_rating,
+        COUNT(f.feedback_id) as rating_count
+      FROM Projects p
+      LEFT JOIN Feedback f ON p.project_id = f.entity_id AND f.entity_type = 'project'
+      WHERE p.status = 'approved' AND f.rating IS NOT NULL
+      GROUP BY p.project_id, p.title
+      HAVING rating_count > 0
+      ORDER BY average_rating DESC, rating_count DESC
+      LIMIT 5
+    `);
+
+    res.status(200).json({
+      success: true,
+      data: projects,
+    });
+  } catch (error) {
+    console.error("Error fetching top rated projects:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch top rated projects",
+    });
+  }
+};
+
+// Get top 5 highest-rated offerings
+export const getTopRatedOfferings = async (req, res) => {
+  try {
+    const [offerings] = await pool.execute(`
+      SELECT 
+        o.offering_id,
+        o.name,
+        AVG(f.rating) as average_rating,
+        COUNT(f.feedback_id) as rating_count
+      FROM Offering o
+      LEFT JOIN Feedback f ON o.offering_id = f.entity_id AND f.entity_type = 'offer'
+      WHERE o.status = 'approved' AND f.rating IS NOT NULL
+      GROUP BY o.offering_id, o.name
+      HAVING rating_count > 0
+      ORDER BY average_rating DESC, rating_count DESC
+      LIMIT 5
+    `);
+
+    res.status(200).json({
+      success: true,
+      data: offerings,
+    });
+  } catch (error) {
+    console.error("Error fetching top rated offerings:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch top rated offerings",
+    });
+  }
+};

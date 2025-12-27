@@ -10,6 +10,7 @@ import {
   createOfferingController,
   updateOfferingController,
   getAllOfferingsController,
+  uploadOfferingImagesController,
 } from "../controllers/companyController.js";
 import { upload } from "../config/multer.js";
 import { authenticateToken, authorizeUser } from "../middleware/auth.js";
@@ -82,6 +83,16 @@ router.put(
   authenticateToken,
   authorizeUser,
   updateOfferingController
+);
+
+// Upload offering images
+router.post(
+  "/offering/:user_id/upload",
+  authenticateToken,
+  authorizeUser,
+  uploadRateLimiter,
+  upload.fields([{ name: "images", maxCount: 10 }]),
+  uploadOfferingImagesController
 );
 
 export default router;

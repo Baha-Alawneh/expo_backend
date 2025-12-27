@@ -279,6 +279,11 @@ export const postProjectController = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Project title is required" });
 
+    if (!data.type || !['engineering', 'science'].includes(data.type))
+      return res
+        .status(400)
+        .json({ success: false, message: "Valid project type is required (engineering or science)" });
+
     const existingProject = await getProjectByStudentId(student.student_id);
     if (existingProject) {
       throw new Error("Student already has a project. Use update instead.");

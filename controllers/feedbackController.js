@@ -154,7 +154,7 @@ export const createOrUpdateProjectFeedbackController = async (req, res) => {
       user_id,
       project_id,
       rating,
-      comment,
+      comment: comment || "",
     });
     console.log("📝 Project ID type:", typeof project_id, "Value:", project_id);
     console.log("📝 Request body:", req.body);
@@ -191,12 +191,17 @@ export const createOrUpdateProjectFeedbackController = async (req, res) => {
       project_id
     );
 
+    // Ensure comment is a string or null, normalize empty strings to null
+    const safeComment = comment && typeof comment === 'string' && comment.trim() !== "" 
+      ? comment.trim() 
+      : null;
+
     let result;
     if (existingFeedback) {
       // Update existing feedback
       result = await Feedback.updateFeedback(existingFeedback.feedback_id, {
         rating,
-        comment,
+        comment: safeComment,
       });
     } else {
       // Create new feedback
@@ -205,9 +210,11 @@ export const createOrUpdateProjectFeedbackController = async (req, res) => {
         entity_id: project_id,
         entity_type: "project",
         rating,
-        comment,
+        comment: safeComment,
       });
     }
+
+    console.log("✅ Feedback saved successfully");
 
     res.json({
       success: true,
@@ -275,12 +282,17 @@ export const createOrUpdateOfferingFeedbackController = async (req, res) => {
       offering_id
     );
 
+    // Ensure comment is a string or null, normalize empty strings to null
+    const safeComment = comment && typeof comment === 'string' && comment.trim() !== "" 
+      ? comment.trim() 
+      : null;
+
     let result;
     if (existingFeedback) {
       // Update existing feedback
       result = await Feedback.updateFeedback(existingFeedback.feedback_id, {
         rating,
-        comment,
+        comment: safeComment,
       });
     } else {
       // Create new feedback
@@ -289,7 +301,7 @@ export const createOrUpdateOfferingFeedbackController = async (req, res) => {
         entity_id: offering_id,
         entity_type: "offer",
         rating,
-        comment,
+        comment: safeComment,
       });
     }
 

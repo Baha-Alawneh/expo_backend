@@ -37,9 +37,16 @@ export const upload = multer({
         if (file.fieldname === "photo") {
           folder = "student-photos";
         } else if (file.fieldname === "images") {
-          folder = "project-images";
+          // Check the route to determine if it's project or offering images
+          if (req.path && req.path.includes('/offering/')) {
+            folder = "offering-images";
+          } else {
+            folder = "project-images";
+          }
         } else if (file.fieldname === "image") {
           folder = "chat-images";
+        } else if (file.fieldname === "profile_image") {
+          folder = "company-profiles";
         } else {
           folder = "images";
         }

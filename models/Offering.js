@@ -37,14 +37,14 @@ export const getOfferingByCompanyId = async (company_id) => {
 
 // Create new offering for company
 export const createOffering = async (company_id, data) => {
-  const { name, description, price, offering_photos } = data;
+  const { name, description, price, offering_photos, type } = data;
 
   const offering_id = uuidv4();
 
   await pool.execute(
     `INSERT INTO Offering 
-     (offering_id, company_id, name, description, price, offering_photos)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+     (offering_id, company_id, name, description, price, offering_photos, type)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [
       offering_id,
       company_id,
@@ -52,6 +52,7 @@ export const createOffering = async (company_id, data) => {
       description || null,
       price || null,
       offering_photos ? JSON.stringify(offering_photos) : null,
+      type || null,
     ]
   );
 
