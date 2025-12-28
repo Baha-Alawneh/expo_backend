@@ -123,12 +123,32 @@ export const getProjectByIdController = async (req, res) => {
 export const getAllProjectsController = async (req, res) => {
   try {
     const { sortBy, sortOrder } = req.query; // e.g., ?sortBy=rating&sortOrder=DESC
-    const projects = await Project.getAllProjects(sortBy, sortOrder);
+    let projects = await Project.getAllProjects(sortBy, sortOrder);
 
     if (!projects || projects.length === 0)
       return res
         .status(404)
         .json({ success: false, message: "No projects found" });
+
+    // If user is a student, exclude their own project
+    if (req.user && req.user.role === 'student') {
+      try {
+        const student = await getStudentById(req.user.userId);
+        if (student && student.student_id) {
+          // Filter out projects where any member is this student
+          projects = projects.filter(project => {
+            // Check if this student is a member of this project
+            const isMyProject = project.students && project.students.some(
+              s => s.student_id === student.student_id
+            );
+            return !isMyProject;
+          });
+        }
+      } catch (err) {
+        console.error("Error filtering student's project:", err);
+        // Continue without filtering if there's an error
+      }
+    }
 
     // Generate signed URLs for each project's photos
     for (const project of projects) {

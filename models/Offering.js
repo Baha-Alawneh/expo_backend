@@ -72,7 +72,8 @@ export const updateOffering = async (company_id, data) => {
        name = COALESCE(?, name), 
        description = COALESCE(?, description), 
        price = COALESCE(?, price), 
-       offering_photos = COALESCE(?, offering_photos)
+       offering_photos = COALESCE(?, offering_photos),
+       status = 'pending'
      WHERE company_id = ?`,
     [
       name || null,

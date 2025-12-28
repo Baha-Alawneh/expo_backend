@@ -192,7 +192,8 @@ export const updateProject = async (student_id, data) => {
          description = COALESCE(?, description), 
          video_url = COALESCE(?, video_url), 
          github_link = COALESCE(?, github_link), 
-         project_photos = COALESCE(?, project_photos)
+         project_photos = COALESCE(?, project_photos),
+         status = 'pending'
        WHERE project_id = ?`,
       [
         title || null,

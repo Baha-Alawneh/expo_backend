@@ -531,13 +531,29 @@ export const assignBoothToCompanyController = async (req, res) => {
 export const getAllOfferingsController = async (req, res) => {
   try {
     const { sortBy, sortOrder } = req.query; // e.g., ?sortBy=rating&sortOrder=DESC
-    const offerings = await Offering.getAllOfferings(sortBy, sortOrder);
+    let offerings = await Offering.getAllOfferings(sortBy, sortOrder);
 
     if (!offerings || offerings.length === 0) {
       return res.status(404).json({
         success: false,
         message: "No offerings found",
       });
+    }
+
+    // If user is a company, exclude their own offerings
+    if (req.user && req.user.role === 'company') {
+      try {
+        const company = await Company.getCompanyById(req.user.userId);
+        if (company && company.company_id) {
+          // Filter out offerings that belong to this company
+          offerings = offerings.filter(offering => 
+            offering.company_id !== company.company_id
+          );
+        }
+      } catch (err) {
+        console.error("Error filtering company's offerings:", err);
+        // Continue without filtering if there's an error
+      }
     }
 
     // Generate signed URLs for offering photos
