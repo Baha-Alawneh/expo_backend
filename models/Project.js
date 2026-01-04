@@ -121,7 +121,7 @@ export const createProject = async (student_id, data) => {
   try {
     await connection.beginTransaction();
 
-    //create project
+    //create project - don't store project_photos initially, they will be uploaded separately
     await connection.execute(
       `INSERT INTO Projects 
        (project_id, title, description, video_url, github_link, project_photos, type)
@@ -132,7 +132,7 @@ export const createProject = async (student_id, data) => {
         description || null,
         video_url || null,
         github_link || null,
-        project_photos ? JSON.stringify(project_photos) : null,
+        null, // Always null initially - images uploaded separately
         type || null,
       ]
     );
@@ -185,24 +185,48 @@ export const updateProject = async (student_id, data) => {
 
     const project_id = projectRows[0].project_id;
 
-    await connection.execute(
-      `UPDATE Projects 
-       SET 
-         title = COALESCE(?, title), 
-         description = COALESCE(?, description), 
-         video_url = COALESCE(?, video_url), 
-         github_link = COALESCE(?, github_link), 
-         project_photos = COALESCE(?, project_photos)
-       WHERE project_id = ?`,
-      [
-        title || null,
-        description || null,
-        video_url || null,
-        github_link || null,
-        project_photos ? JSON.stringify(project_photos) : null,
-        project_id,
-      ]
-    );
+    // Validate and clean project_photos if provided
+    let cleanedPhotos;
+    let shouldUpdatePhotos = false;
+    
+    if (project_photos !== undefined && project_photos !== null) {
+      shouldUpdatePhotos = true;
+      if (Array.isArray(project_photos)) {
+        // Filter to only valid S3 keys (strings)
+        const validPhotos = project_photos.filter(
+          (photo) => photo && typeof photo === 'string' && photo.trim().length > 0
+        );
+        cleanedPhotos = validPhotos.length > 0 ? JSON.stringify(validPhotos) : null;
+      } else {
+        cleanedPhotos = null;
+      }
+    }
+
+    // Build query based on whether we're updating photos
+    const query = shouldUpdatePhotos
+      ? `UPDATE Projects 
+         SET 
+           title = COALESCE(?, title), 
+           description = COALESCE(?, description), 
+           video_url = COALESCE(?, video_url), 
+           github_link = COALESCE(?, github_link), 
+           project_photos = ?,
+           status = 'pending'
+         WHERE project_id = ?`
+      : `UPDATE Projects 
+         SET 
+           title = COALESCE(?, title), 
+           description = COALESCE(?, description), 
+           video_url = COALESCE(?, video_url), 
+           github_link = COALESCE(?, github_link), 
+           status = 'pending'
+         WHERE project_id = ?`;
+
+    const params = shouldUpdatePhotos
+      ? [title || null, description || null, video_url || null, github_link || null, cleanedPhotos, project_id]
+      : [title || null, description || null, video_url || null, github_link || null, project_id];
+
+    await connection.execute(query, params);
 
     await connection.commit();
 

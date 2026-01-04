@@ -169,12 +169,12 @@ export const updateCompanyById = async (user_id, data) => {
         type = ?
        WHERE user_id = ?`,
       [
-        company_name,
-        phone,
-        address,
-        description,
-        website_url,
-        type,
+        company_name || null,
+        phone || null,
+        address || null,
+        description || null,
+        website_url || null,
+        type || null,
         user_id,
       ]
     );

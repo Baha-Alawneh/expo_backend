@@ -381,7 +381,7 @@ export const getProjectsByStatus = async (req, res) => {
 export const updateProjectStatus = async (req, res) => {
   try {
     const { project_id } = req.params;
-    const { status } = req.body; // 'approved' or 'rejected'
+    const { status, rejection_reason } = req.body; // 'approved' or 'rejected', optional rejection_reason
 
     if (!["approved", "rejected"].includes(status)) {
       return res.status(400).json({
@@ -390,10 +390,73 @@ export const updateProjectStatus = async (req, res) => {
       });
     }
 
+    // Validate rejection reason if status is rejected
+    if (status === "rejected" && (!rejection_reason || rejection_reason.trim() === "")) {
+      return res.status(400).json({
+        success: false,
+        message: "Rejection reason is required when rejecting a project",
+      });
+    }
+
+    // Get project details before updating
+    const [projectRows] = await pool.execute(
+      `SELECT p.title, p.project_id
+       FROM Projects p
+       WHERE p.project_id = ?`,
+      [project_id]
+    );
+
+    if (projectRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    const project = projectRows[0];
+
+    // Update project status
     await pool.execute(
       `UPDATE Projects SET status = ? WHERE project_id = ?`,
       [status, project_id]
     );
+
+    // Get all student user_ids associated with this project for notifications
+    const [teamMembers] = await pool.execute(
+      `SELECT u.user_id
+       FROM ProjectMembers pm
+       JOIN Students s ON pm.student_id = s.student_id
+       JOIN Users u ON s.user_id = u.user_id
+       WHERE pm.project_id = ?`,
+      [project_id]
+    );
+
+    const userIds = teamMembers.map(member => member.user_id);
+
+    // Send notification based on status
+    if (status === "approved" && userIds.length > 0) {
+      try {
+        await sendNotificationToUsers(userIds, {
+          title: "Project Approved",
+          message: `Your project "${project.title}" has been approved.`,
+          icon: "checkmark-circle"
+        });
+      } catch (notifError) {
+        console.error("Error sending project approval notification:", notifError);
+        // Don't fail the request if notification fails
+      }
+    } else if (status === "rejected" && userIds.length > 0) {
+      try {
+        await sendNotificationToUsers(userIds, {
+          title: "Project Rejected",
+          message: `Your project "${project.title}" has been rejected. Reason: ${rejection_reason}`,
+          icon: "close-circle"
+        });
+      } catch (notifError) {
+        console.error("Error sending project rejection notification:", notifError);
+        // Don't fail the request if notification fails
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -623,7 +686,7 @@ export const getOfferingsByStatus = async (req, res) => {
 export const updateOfferingStatus = async (req, res) => {
   try {
     const { offering_id } = req.params;
-    const { status } = req.body; // 'approved' or 'rejected'
+    const { status, rejection_reason } = req.body; // 'approved' or 'rejected', optional rejection_reason
 
     if (!["approved", "rejected"].includes(status)) {
       return res.status(400).json({
@@ -632,10 +695,63 @@ export const updateOfferingStatus = async (req, res) => {
       });
     }
 
+    // Validate rejection reason if status is rejected
+    if (status === "rejected" && (!rejection_reason || rejection_reason.trim() === "")) {
+      return res.status(400).json({
+        success: false,
+        message: "Rejection reason is required when rejecting an offering",
+      });
+    }
+
+    // Get offering details before updating
+    const [offeringRows] = await pool.execute(
+      `SELECT o.name, o.company_id, u.user_id
+       FROM Offering o
+       JOIN Companies c ON o.company_id = c.company_id
+       JOIN Users u ON c.user_id = u.user_id
+       WHERE o.offering_id = ?`,
+      [offering_id]
+    );
+
+    if (offeringRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Offering not found",
+      });
+    }
+
+    const offering = offeringRows[0];
+
+    // Update offering status
     await pool.execute(
-      `UPDATE Offering SET status = ?, updated_at = NOW() WHERE offering_id = ?`,
+      `UPDATE Offering SET status = ? WHERE offering_id = ?`,
       [status, offering_id]
     );
+
+    // Send notification based on status
+    if (status === "approved") {
+      try {
+        await sendNotificationToUsers([offering.user_id], {
+          title: "Offer Approved",
+          message: `Your offer "${offering.name}" has been approved.`,
+          icon: "checkmark-circle"
+        });
+      } catch (notifError) {
+        console.error("Error sending offer approval notification:", notifError);
+        // Don't fail the request if notification fails
+      }
+    } else if (status === "rejected") {
+      try {
+        await sendNotificationToUsers([offering.user_id], {
+          title: "Offer Rejected",
+          message: `Your offer "${offering.name}" has been rejected. Reason: ${rejection_reason}`,
+          icon: "close-circle"
+        });
+      } catch (notifError) {
+        console.error("Error sending offer rejection notification:", notifError);
+        // Don't fail the request if notification fails
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -813,6 +929,49 @@ function getIconColor(icon) {
   }
   
   return "#74B9FF"; // Default blue
+}
+
+/**
+ * Helper function to send notifications to specific users
+ * @param {Array} userIds - Array of user IDs to send notifications to
+ * @param {Object} notificationData - { title, message, icon }
+ */
+async function sendNotificationToUsers(userIds, notificationData) {
+  try {
+    if (!firebaseApp || userIds.length === 0) {
+      console.log("[Notification] Cannot send - Firebase not initialized or no users");
+      return;
+    }
+
+    const db = firebaseApp.firestore();
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    
+    const { title, message, icon = "checkmark-circle" } = notificationData;
+    
+    const notification = {
+      title,
+      message,
+      icon,
+      iconColor: getIconColor(icon),
+      type: getNotificationType(icon),
+      time: new Date().toISOString(),
+      read: false,
+      createdAt: timestamp,
+    };
+
+    const savePromises = userIds.map((userId) => {
+      return db
+        .collection("notifications")
+        .doc(userId.toString())
+        .collection("userNotifications")
+        .add(notification);
+    });
+
+    await Promise.all(savePromises);
+    console.log(`[Notification] Sent to ${userIds.length} user(s): ${title}`);
+  } catch (error) {
+    console.error("[Notification] Error sending notifications:", error);
+  }
 }
 
 // Get all users for notification dropdown

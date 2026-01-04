@@ -1,5 +1,6 @@
 import * as Project from "../models/Project.js";
 import { getStudentById } from "../models/Student.js";
+import { getProjectByStudentId } from "../models/Project.js";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl as getSignedUrlSDK } from "@aws-sdk/s3-request-presigner";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -123,12 +124,32 @@ export const getProjectByIdController = async (req, res) => {
 export const getAllProjectsController = async (req, res) => {
   try {
     const { sortBy, sortOrder } = req.query; // e.g., ?sortBy=rating&sortOrder=DESC
-    const projects = await Project.getAllProjects(sortBy, sortOrder);
+    let projects = await Project.getAllProjects(sortBy, sortOrder);
 
     if (!projects || projects.length === 0)
       return res
         .status(404)
         .json({ success: false, message: "No projects found" });
+
+    // If user is a student, exclude their own project
+    if (req.user && req.user.role === 'student') {
+      try {
+        const student = await getStudentById(req.user.userId);
+        if (student && student.student_id) {
+          // Filter out projects where any member is this student
+          projects = projects.filter(project => {
+            // Check if this student is a member of this project
+            const isMyProject = project.students && project.students.some(
+              s => s.student_id === student.student_id
+            );
+            return !isMyProject;
+          });
+        }
+      } catch (err) {
+        console.error("Error filtering student's project:", err);
+        // Continue without filtering if there's an error
+      }
+    }
 
     // Generate signed URLs for each project's photos
     for (const project of projects) {
@@ -327,6 +348,9 @@ export const postProjectController = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Valid project type is required (engineering or science)" });
 
+    // Don't accept project_photos in create payload - images should be uploaded separately
+    delete data.project_photos;
+
     const existingProject = await getProjectByStudentId(student.student_id);
     if (existingProject) {
       throw new Error("Student already has a project. Use update instead.");
@@ -376,6 +400,8 @@ export const updateProjectController = async (req, res) => {
         .json({ success: false, message: "Student not found" });
 
     const data = req.body;
+    // Don't accept project_photos in update payload - images should be uploaded separately
+    delete data.project_photos;
     const project = await Project.updateProject(student.student_id, data);
     res.json({
       success: true,
@@ -418,50 +444,54 @@ export const uploadProjectImagesController = async (req, res) => {
         .status(400)
         .json({ success: false, message: "No images were uploaded." });
 
-    const imageKeys = req.files.images.map((file) => file.key);
-    // Delete old images with proper error handling
-    if (project.project_photos?.length > 0) {
+    const newImageKeys = req.files.images.map((file) => file.key);
+    
+    // Get existing images (filter to ensure only valid S3 keys)
+    let existingImageKeys = [];
+    if (project.project_photos && Array.isArray(project.project_photos)) {
+      existingImageKeys = project.project_photos.filter(
+        (photo) => photo && typeof photo === 'string' && photo.trim().length > 0
+      );
+    }
+    
+    // Delete old images from S3 if they exist
+    if (existingImageKeys.length > 0) {
       const deletionResults = await Promise.allSettled(
-        project.project_photos.map(async (photo) => {
-          // If photo is an object, get the key property; if it's a URL, extract the key from the URL
-          let key = photo;
-          if (typeof photo === "object" && photo.key) {
-            key = photo.key;
-          } else if (typeof photo === "object" && photo.fileName) {
-            // Optional: parse fileName or uri to get the S3 key if needed
-            key = decodeURIComponent(photo.fileName.split("?")[0]);
-          } else if (typeof photo === "string" && photo.startsWith("http")) {
-            // Extract the S3 key from the URL
-            const url = new URL(photo);
-            key = decodeURIComponent(url.pathname.substring(1));
+        existingImageKeys.map(async (key) => {
+          try {
+            const deleteCmd = new DeleteObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME,
+              Key: key,
+            });
+            return await s3.send(deleteCmd);
+          } catch (err) {
+            console.error("Error deleting old image:", key, err);
+            return null;
           }
-          const del = new DeleteObjectCommand({
-            Bucket: process.env.S3_BUCKET_NAME,
-            Key: key,
-          });
-          return s3.send(del);
         })
       );
 
-      // Log any deletion failures but don't stop the process
       deletionResults.forEach((result, index) => {
         if (result.status === "rejected") {
           console.error(
-            "Error deleting old image:",
-            project.project_photos[index],
+            "Failed to delete old image:",
+            existingImageKeys[index],
             result.reason
           );
         }
       });
     }
 
-    // Update database
-    const updatedProject = await updateProject(student.student_id, {
-      project_photos: imageKeys,
+    // Replace with new images only (don't append)
+    const allImageKeys = newImageKeys;
+
+    // Update database with new images only
+    const updatedProject = await Project.updateProject(student.student_id, {
+      project_photos: allImageKeys,
     });
 
     const signedUrls = await Promise.all(
-      imageKeys.map(async (key) => {
+      allImageKeys.map(async (key) => {
         try {
           const cmd = new GetObjectCommand({
             Bucket: process.env.S3_BUCKET_NAME,
@@ -480,7 +510,7 @@ export const uploadProjectImagesController = async (req, res) => {
       data: {
         ...updatedProject,
         project_photos: signedUrls.filter(Boolean),
-        image_keys: imageKeys,
+        image_keys: allImageKeys,
       },
     });
   } catch (error) {
