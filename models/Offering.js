@@ -13,14 +13,25 @@ export const getOfferingByCompanyId = async (company_id) => {
 
   const offering = rows[0];
 
-  // Parse offering_photos JSON
+  // MySQL JSON columns are already parsed as arrays, no need to JSON.parse
   let images = [];
   if (offering.offering_photos) {
-    try {
-      images = JSON.parse(offering.offering_photos);
-      if (!Array.isArray(images)) images = [];
-    } catch (e) {
-      images = [];
+    if (Array.isArray(offering.offering_photos)) {
+      // Already an array from MySQL
+      images = offering.offering_photos.filter(
+        (photo) => photo && typeof photo === 'string' && photo.trim().length > 0
+      );
+    } else if (typeof offering.offering_photos === 'string') {
+      // In case it's a string, parse it
+      try {
+        const parsed = JSON.parse(offering.offering_photos);
+        images = Array.isArray(parsed) ? parsed.filter(
+          (photo) => photo && typeof photo === 'string' && photo.trim().length > 0
+        ) : [];
+      } catch (e) {
+        console.error("Error parsing offering_photos:", e);
+        images = [];
+      }
     }
   }
 
@@ -41,20 +52,28 @@ export const createOffering = async (company_id, data) => {
 
   const offering_id = uuidv4();
 
+  // Insert offering - don't store offering_photos initially, they will be uploaded separately
   await pool.execute(
     `INSERT INTO Offering 
-     (offering_id, company_id, name, description, price, offering_photos, type)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+     (offering_id, company_id, name, description, price, offering_photos)
+     VALUES (?, ?, ?, ?, ?, ?)`,
     [
       offering_id,
       company_id,
       name || null,
       description || null,
       price || null,
-      offering_photos ? JSON.stringify(offering_photos) : null,
-      type || null,
+      null, // Always null initially - images uploaded separately
     ]
   );
+
+  // Update company type if provided
+  if (type) {
+    await pool.execute(
+      `UPDATE Companies SET type = ? WHERE company_id = ?`,
+      [type, company_id]
+    );
+  }
 
   return {
     offering_id,
@@ -66,23 +85,46 @@ export const createOffering = async (company_id, data) => {
 export const updateOffering = async (company_id, data) => {
   const { name, description, price, offering_photos } = data;
 
-  await pool.execute(
-    `UPDATE Offering 
-     SET 
-       name = COALESCE(?, name), 
-       description = COALESCE(?, description), 
-       price = COALESCE(?, price), 
-       offering_photos = COALESCE(?, offering_photos),
-       status = 'pending'
-     WHERE company_id = ?`,
-    [
-      name || null,
-      description || null,
-      price || null,
-      offering_photos ? JSON.stringify(offering_photos) : null,
-      company_id,
-    ]
-  );
+  // Validate and clean offering_photos if provided
+  let cleanedPhotos;
+  let shouldUpdatePhotos = false;
+  
+  if (offering_photos !== undefined && offering_photos !== null) {
+    shouldUpdatePhotos = true;
+    if (Array.isArray(offering_photos)) {
+      // Filter to only valid S3 keys (strings)
+      const validPhotos = offering_photos.filter(
+        (photo) => photo && typeof photo === 'string' && photo.trim().length > 0
+      );
+      cleanedPhotos = validPhotos.length > 0 ? JSON.stringify(validPhotos) : null;
+    } else {
+      cleanedPhotos = null;
+    }
+  }
+
+  // Build query based on whether we're updating photos
+  const query = shouldUpdatePhotos
+    ? `UPDATE Offering 
+       SET 
+         name = COALESCE(?, name), 
+         description = COALESCE(?, description), 
+         price = COALESCE(?, price), 
+         offering_photos = ?,
+         status = 'pending'
+       WHERE company_id = ?`
+    : `UPDATE Offering 
+       SET 
+         name = COALESCE(?, name), 
+         description = COALESCE(?, description), 
+         price = COALESCE(?, price), 
+         status = 'pending'
+       WHERE company_id = ?`;
+
+  const params = shouldUpdatePhotos
+    ? [name || null, description || null, price || null, cleanedPhotos, company_id]
+    : [name || null, description || null, price || null, company_id];
+
+  await pool.execute(query, params);
 
   return await getOfferingByCompanyId(company_id);
 };

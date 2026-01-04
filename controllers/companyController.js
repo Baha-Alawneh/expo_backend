@@ -328,9 +328,12 @@ export const getOfferingController = async (req, res) => {
       });
     }
 
+    console.log("Offering from DB:", offering);
+    console.log("Images array:", offering.images);
+
     // Generate signed URLs for offering photos
-    if (offering.images && offering.images.length > 0) {
-      offering.offering_photos = await Promise.all(
+    if (offering.images && Array.isArray(offering.images) && offering.images.length > 0) {
+      const signedImageUrls = await Promise.all(
         offering.images.map(async (imageKey) => {
           try {
             const command = new GetObjectCommand({
@@ -339,11 +342,15 @@ export const getOfferingController = async (req, res) => {
             });
             return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
           } catch (error) {
-            console.error("Error generating signed URL:", error);
+            console.error("Error generating signed URL for:", imageKey, error);
             return null;
           }
         })
       );
+      offering.offering_photos = signedImageUrls.filter(Boolean);
+      console.log("Generated signed URLs:", offering.offering_photos);
+    } else {
+      offering.offering_photos = [];
     }
 
     res.json({ success: true, data: offering });
@@ -422,6 +429,9 @@ export const createOfferingController = async (req, res) => {
         .json({ success: false, message: "Valid offering type is required (sponser or service)" });
     }
 
+    // Don't accept offering_photos in create payload - images should be uploaded separately
+    delete data.offering_photos;
+
     // Check if offering already exists
     const existingOffering = await Offering.getOfferingByCompanyId(
       company.company_id
@@ -464,6 +474,9 @@ export const updateOfferingController = async (req, res) => {
         .json({ success: false, message: "Company not found" });
     }
 
+    // Don't accept offering_photos in update payload - images should be uploaded separately
+    delete data.offering_photos;
+
     const offering = await Offering.updateOffering(company.company_id, data);
 
     res.json({
@@ -473,9 +486,13 @@ export const updateOfferingController = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating offering:", error);
+    console.error("Error stack:", error.stack);
     res
       .status(500)
-      .json({ success: false, message: "Error updating offering" });
+      .json({ 
+        success: false, 
+        message: error.message || "Error updating offering" 
+      });
   }
 };
 
@@ -617,6 +634,11 @@ export const uploadOfferingImagesController = async (req, res) => {
   try {
     const { user_id } = req.params;
     
+    console.log("=== Upload Offering Images ===");
+    console.log("user_id:", user_id);
+    console.log("req.files:", req.files);
+    console.log("req.body:", req.body);
+    
     if (!user_id) {
       return res.status(400).json({ 
         success: false, 
@@ -633,6 +655,8 @@ export const uploadOfferingImagesController = async (req, res) => {
       });
     }
 
+    console.log("company_id:", company.company_id);
+
     // Get existing offering
     const offering = await Offering.getOfferingByCompanyId(company.company_id);
     if (!offering) {
@@ -642,59 +666,78 @@ export const uploadOfferingImagesController = async (req, res) => {
       });
     }
 
-    // Check if images were uploaded
-    if (!req.files || !req.files.images || req.files.images.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "No images were uploaded." 
-      });
+    console.log("Existing offering images:", offering.images);
+
+    // Get list of old image keys to keep (sent from frontend)
+    let keepImageKeys = [];
+    if (req.body.keepImages) {
+      try {
+        keepImageKeys = JSON.parse(req.body.keepImages);
+        if (!Array.isArray(keepImageKeys)) keepImageKeys = [];
+      } catch (e) {
+        keepImageKeys = [];
+      }
+    }
+    console.log("Images to keep:", keepImageKeys);
+
+    // Get new uploaded images
+    const newImageKeys = req.files && req.files.images 
+      ? req.files.images.map((file) => file.key)
+      : [];
+    console.log("New image keys:", newImageKeys);
+
+    // Get existing images
+    let existingImageKeys = [];
+    if (offering.images && Array.isArray(offering.images)) {
+      existingImageKeys = offering.images.filter(
+        (photo) => photo && typeof photo === 'string' && photo.trim().length > 0
+      );
     }
 
-    const imageKeys = req.files.images.map((file) => file.key);
+    // Images to delete = existing images NOT in the keep list
+    const imagesToDelete = existingImageKeys.filter(key => !keepImageKeys.includes(key));
+    console.log("Images to delete:", imagesToDelete);
 
-    // Delete old images with proper error handling
-    if (offering.images && offering.images.length > 0) {
+    // Delete old images that are no longer needed
+    if (imagesToDelete.length > 0) {
       const deletionResults = await Promise.allSettled(
-        offering.images.map(async (photo) => {
-          // Extract S3 key from different formats
-          let key = photo;
-          if (typeof photo === "object" && photo.key) {
-            key = photo.key;
-          } else if (typeof photo === "object" && photo.fileName) {
-            key = decodeURIComponent(photo.fileName.split("?")[0]);
-          } else if (typeof photo === "string" && photo.startsWith("http")) {
-            const url = new URL(photo);
-            key = decodeURIComponent(url.pathname.substring(1));
+        imagesToDelete.map(async (key) => {
+          try {
+            const deleteCmd = new DeleteObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME,
+              Key: key,
+            });
+            return await s3.send(deleteCmd);
+          } catch (err) {
+            console.error("Error deleting old image:", key, err);
+            return null;
           }
-          
-          const del = new DeleteObjectCommand({
-            Bucket: process.env.S3_BUCKET_NAME,
-            Key: key,
-          });
-          return s3.send(del);
         })
       );
 
-      // Log any deletion failures but don't stop the process
       deletionResults.forEach((result, index) => {
         if (result.status === "rejected") {
           console.error(
-            "Error deleting old image:",
-            offering.images[index],
+            "Failed to delete old image:",
+            imagesToDelete[index],
             result.reason
           );
         }
       });
     }
 
-    // Update database with new image keys
+    // Combine kept old images with new uploaded images
+    const allImageKeys = [...keepImageKeys, ...newImageKeys];
+    console.log("All image keys (old + new):", allImageKeys);
+
+    // Update database with new images only
     const updatedOffering = await Offering.updateOffering(company.company_id, {
-      offering_photos: imageKeys,
+      offering_photos: allImageKeys,
     });
 
     // Generate signed URLs for response
     const signedUrls = await Promise.all(
-      imageKeys.map(async (key) => {
+      allImageKeys.map(async (key) => {
         try {
           const cmd = new GetObjectCommand({
             Bucket: process.env.S3_BUCKET_NAME,
@@ -713,7 +756,7 @@ export const uploadOfferingImagesController = async (req, res) => {
       data: {
         ...updatedOffering,
         offering_photos: signedUrls.filter(Boolean),
-        image_keys: imageKeys,
+        image_keys: allImageKeys,
       },
     });
   } catch (error) {
