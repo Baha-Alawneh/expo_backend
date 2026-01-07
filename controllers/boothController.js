@@ -309,6 +309,29 @@ export const unassignBooth = async (req, res) => {
 };
 
 /**
+ * PATCH /booths/unassign-all
+ * Unassign all booths (Admin only)
+ */
+export const unassignAllBooths = async (req, res) => {
+  try {
+    const result = await Booth.unassignAll();
+
+    res.json({
+      success: true,
+      message: result.message,
+      count: result.count
+    });
+  } catch (error) {
+    console.error('Error unassigning all booths:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error unassigning all booths',
+      error: error.message
+    });
+  }
+};
+
+/**
  * GET /booths/next-custom-number
  * Get next available custom booth number (C-1, C-2, etc.)
  */

@@ -357,6 +357,22 @@ export const unassign = async (boothId) => {
 };
 
 /**
+ * Unassign all booths (clear all assignments)
+ */
+export const unassignAll = async () => {
+  const [result] = await pool.execute(
+    `UPDATE Booths 
+     SET assigned_to_project = NULL, assigned_to_company = NULL`
+  );
+
+  return {
+    success: true,
+    message: `${result.affectedRows} booth(s) unassigned successfully`,
+    count: result.affectedRows
+  };
+};
+
+/**
  * Get next available custom booth number
  * Returns the next "C-X" number
  */

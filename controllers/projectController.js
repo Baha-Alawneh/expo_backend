@@ -1,5 +1,6 @@
 import * as Project from "../models/Project.js";
 import { getStudentById } from "../models/Student.js";
+import { getProjectByStudentId, updateProject } from "../models/Project.js";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl as getSignedUrlSDK } from "@aws-sdk/s3-request-presigner";
 import { GetObjectCommand } from "@aws-sdk/client-s3";

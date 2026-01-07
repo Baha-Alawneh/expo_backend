@@ -7,6 +7,7 @@ import {
   deleteBooth,
   assignBooth,
   unassignBooth,
+  unassignAllBooths,
   getNextCustomBoothNumber
 } from '../controllers/boothController.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
@@ -42,6 +43,9 @@ router.put('/booths/:id/assign', authenticateToken, authorizeRole('admin'), assi
 
 // Unassign booth
 router.put('/booths/:id/unassign', authenticateToken, authorizeRole('admin'), unassignBooth);
+
+// Unassign all booths
+router.patch('/booths/unassign-all', authenticateToken, authorizeRole('admin'), unassignAllBooths);
 
 // Get next available custom booth number (C-1, C-2, ...)
 router.get('/booths-util/next-custom-number', authenticateToken, authorizeRole('admin'), getNextCustomBoothNumber);
