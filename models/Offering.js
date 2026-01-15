@@ -184,3 +184,13 @@ export const getAllOfferings = async (sortBy = null, sortOrder = "DESC") => {
 
   return offeringsWithRatings;
 };
+
+// Delete offering by company_id
+export const deleteOffering = async (company_id) => {
+  const [result] = await pool.execute(
+    `DELETE FROM Offering WHERE company_id = ?`,
+    [company_id]
+  );
+
+  return result.affectedRows > 0;
+};

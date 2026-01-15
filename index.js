@@ -39,6 +39,8 @@ import boothRoutes from "./routes/boothRoutes.js";
 import feedbackRoutes from "./routes/feedbackRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import borderRoutes from "./routes/borders.routes.js";
+import buildingRoutes from "./routes/buildings.routes.js";
 
 const app = express();
 
@@ -64,6 +66,8 @@ app.use("/api/v1", boothRoutes);
 app.use("/api/v1/feedback", feedbackRoutes);
 app.use("/api/v1/chats", chatRoutes);
 app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/borders", borderRoutes);
+app.use("/api/v1/buildings", buildingRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
