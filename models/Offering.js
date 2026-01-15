@@ -143,7 +143,8 @@ export const getAllOfferings = async (sortBy = null, sortOrder = "DESC") => {
     orderByClause = "ORDER BY offering_id DESC";
   }
 
-  const [rows] = await pool.execute(`SELECT * FROM Offering ${orderByClause}`);
+  // Only fetch approved offerings
+  const [rows] = await pool.execute(`SELECT * FROM Offering WHERE status = 'approved' ${orderByClause}`);
 
   // For each offering, get rating stats
   const offeringsWithRatings = await Promise.all(

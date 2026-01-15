@@ -575,8 +575,21 @@ export const getAllOfferingsController = async (req, res) => {
 
     // Generate signed URLs for offering photos
     for (const offering of offerings) {
-      if (offering.images && offering.images.length > 0) {
-        offering.offering_photos = await Promise.all(
+      // Parse offering_photos JSON if needed
+      if (
+        offering.offering_photos &&
+        typeof offering.offering_photos === "string"
+      ) {
+        try {
+          offering.offering_photos = JSON.parse(offering.offering_photos);
+        } catch (err) {
+          console.error("Error parsing offering_photos JSON:", err);
+          offering.offering_photos = [];
+        }
+      }
+
+      if (offering.images && Array.isArray(offering.images) && offering.images.length > 0) {
+        const signedUrls = await Promise.all(
           offering.images.map(async (imageKey) => {
             try {
               const command = new GetObjectCommand({
@@ -590,6 +603,29 @@ export const getAllOfferingsController = async (req, res) => {
             }
           })
         );
+        offering.offering_photos = signedUrls.filter(Boolean);
+      } else if (
+        Array.isArray(offering.offering_photos) &&
+        offering.offering_photos.length > 0
+      ) {
+        // offering_photos already exists, ensure it's an array
+        const signedUrls = await Promise.all(
+          offering.offering_photos.map(async (imageKey) => {
+            try {
+              const command = new GetObjectCommand({
+                Bucket: process.env.S3_BUCKET_NAME,
+                Key: imageKey,
+              });
+              return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+            } catch (error) {
+              console.error("Error generating signed URL:", error);
+              return null;
+            }
+          })
+        );
+        offering.offering_photos = signedUrls.filter(Boolean);
+      } else {
+        offering.offering_photos = [];
       }
     }
 

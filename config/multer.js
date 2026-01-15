@@ -59,6 +59,8 @@ export const upload = multer({
         folder = file.fieldname === "cv" ? "student-cvs" : "pdfs";
       } else if (file.fieldname === "file") {
         folder = "chat-files";
+      } else if (file.fieldname === "video" || file.mimetype.startsWith("video/")) {
+        folder = "reels-videos";
       }
 
       const fileName = `${folder}/${userId}/${Date.now()}-${file.originalname}`;
@@ -66,14 +68,15 @@ export const upload = multer({
     },
   }),
   limits: {
-    fileSize: 20 * 1024 * 1024, // 20MB limit (increased for audio files)
+    fileSize: 100 * 1024 * 1024, // 100MB limit (increased for video files - 2 minute videos)
   },
   fileFilter: function (req, file, cb) {
-    // For chat files and audio, allow any file type
+    // For chat files, audio, and video, allow any file type
     if (
       file.fieldname === "file" ||
       file.fieldname === "image" ||
-      file.fieldname === "audio"
+      file.fieldname === "audio" ||
+      file.fieldname === "video"
     ) {
       cb(null, true);
       return;
