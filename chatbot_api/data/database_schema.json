@@ -1,0 +1,195 @@
+{
+  "Users": {
+    "columns": {
+      "user_id": "char(36) - PRIMARY KEY",
+      "firebase_uid": "varchar(128) - UNIQUE, nullable",
+      "name": "varchar(100) - not null",
+      "email": "varchar(150) - UNIQUE, not null",
+      "password_hash": "varchar(255) - not null",
+      "role": "enum('visitor','student','company','admin') - not null",
+      "created_at": "timestamp - nullable",
+      "firebase_synced_at": "timestamp - nullable",
+      "last_firebase_sync": "timestamp - nullable"
+    },
+    "relationships": {
+      "Students.user_id": "References Users.user_id",
+      "Reels.user_id": "References Users.user_id",
+      "Feedback.user_id": "References Users.user_id"
+    },
+    "description": "Contains user data such as students, companies, and visitors, including basic access control information."
+  },
+  "Students": {
+    "columns": {
+      "student_id": "char(36) - PRIMARY KEY",
+      "user_id": "char(36) - FOREIGN KEY to Users.user_id",
+      "university_id": "varchar(50) - UNIQUE, nullable",
+      "major": "varchar(100) - nullable",
+      "year_of_study": "varchar(50) - nullable",
+      "skills": "json - nullable",
+      "bio": "text - nullable",
+      "cv_name": "varchar(500) - nullable",
+      "photo_name": "varchar(500) - nullable"
+    },
+    "relationships": {
+      "user_id": "Foreign Key to Users.user_id",
+      "ProjectMembers.student_id": "Referenced by ProjectMembers.student_id"
+    },
+    "description": "Contains student data linked to users, such as major, experience, and CV."
+  },
+  "Projects": {
+    "columns": {
+      "project_id": "char(36) - PRIMARY KEY",
+      "title": "varchar(200) - indexed, not null",
+      "description": "text - nullable",
+      "video_url": "varchar(255) - nullable",
+      "github_link": "varchar(255) - nullable",
+      "status": "enum('pending','approved','rejected') - nullable",
+      "created_at": "timestamp - nullable",
+      "booth": "varchar(255) - nullable",
+      "project_photos": "json - nullable",
+      "type": "enum('engineering','science') - nullable"
+    },
+    "relationships": {
+      "ProjectMembers.project_id": "Referenced by ProjectMembers.project_id",
+      "Booths.assigned_to_project": "Referenced by Booths.assigned_to_project"
+    },
+    "description": "Contains projects participating in the expo, including status, title, links, and videos."
+  },
+  "ProjectMembers": {
+    "columns": {
+      "project_id": "char(36) - FOREIGN KEY to Projects.project_id, PRIMARY KEY",
+      "student_id": "char(36) - FOREIGN KEY to Students.student_id, PRIMARY KEY"
+    },
+    "relationships": {
+      "project_id": "Foreign Key to Projects.project_id",
+      "student_id": "Foreign Key to Students.student_id"
+    },
+    "description": "Links students to projects they are working on (Many-to-Many relationship)."
+  },
+  "Companies": {
+    "columns": {
+      "company_id": "char(36) - PRIMARY KEY",
+      "user_id": "char(36) - not null",
+      "company_name": "varchar(150) - nullable",
+      "description": "text - nullable",
+      "phone": "varchar(50) - nullable",
+      "booth_id": "char(36) - FOREIGN KEY to Booths.booth_id",
+      "profile_image": "varchar(255) - nullable",
+      "website_url": "varchar(255) - nullable",
+      "address": "text - nullable",
+      "type": "enum('sponser','service') - nullable"
+    },
+    "relationships": {
+      "booth_id": "Foreign Key to Booths.booth_id",
+      "Offering.company_id": "Referenced by Offering.company_id",
+      "Booths.assigned_to_company": "Referenced by Booths.assigned_to_company"
+    },
+    "description": "Contains data about companies participating in the expo, with contact info, company type, and assigned booth."
+  },
+  "Offering": {
+    "columns": {
+      "offering_id": "char(36) - PRIMARY KEY",
+      "company_id": "char(36) - FOREIGN KEY to Companies.company_id",
+      "name": "varchar(255) - not null",
+      "description": "text - nullable",
+      "price": "decimal(10,2) - nullable",
+      "offering_photos": "json - nullable",
+      "status": "enum('pending','approved','rejected') - nullable",
+      "created_at": "timestamp - nullable"
+    },
+    "relationships": {
+      "company_id": "Foreign Key to Companies.company_id"
+    },
+    "description": "Offers and services provided by companies in the expo."
+  },
+  "Feedback": {
+    "columns": {
+      "feedback_id": "char(36) - PRIMARY KEY",
+      "entity_id": "char(36) - not null",
+      "entity_type": "varchar(45) - not null",
+      "user_id": "char(36) - FOREIGN KEY to Users.user_id",
+      "rating": "int - nullable",
+      "comment": "text - nullable",
+      "created_at": "timestamp - nullable",
+      "updated_at": "timestamp - nullable"
+    },
+    "relationships": {
+      "user_id": "Foreign Key to Users.user_id"
+    },
+    "description": "Ratings and comments left by users on entities (e.g., projects or companies)."
+  },
+  "Reels": {
+    "columns": {
+      "reel_id": "bigint - PRIMARY KEY auto_increment",
+      "user_id": "char(36) - FOREIGN KEY to Users.user_id",
+      "video_url": "varchar(255) - not null",
+      "description": "text - nullable",
+      "created_at": "datetime - nullable"
+    },
+    "relationships": {
+      "user_id": "Foreign Key to Users.user_id"
+    },
+    "description": "Short video clips posted by users."
+  },
+  "Booths": {
+    "columns": {
+      "booth_id": "char(36) - PRIMARY KEY",
+      "booth_number": "varchar(20) - UNIQUE, not null",
+      "location_x": "float - not null",
+      "location_y": "float - not null",
+      "assigned_to_project": "char(36) - FOREIGN KEY to Projects.project_id, nullable",
+      "assigned_to_company": "char(36) - FOREIGN KEY to Companies.company_id, nullable",
+      "width": "float - nullable",
+      "height": "float - nullable",
+      "zone_type": "enum('engineering','sponsor','service','science','standard') - nullable",
+      "shape_type": "enum('rectangle','l-shape-left','l-shape-right') - nullable",
+      "rotation": "int - nullable",
+      "is_custom": "tinyint(1) - nullable",
+      "layout_mode": "enum('default','custom') - nullable",
+      "booth_metadata": "json - nullable"
+    },
+    "relationships": {
+      "assigned_to_project": "Foreign Key to Projects.project_id",
+      "assigned_to_company": "Foreign Key to Companies.company_id",
+      "Companies.booth_id": "Referenced by Companies.booth_id"
+    },
+    "description": "Booths in the expo with location, dimensions, and zone type details."
+  },
+  "buildings": {
+    "columns": {
+      "building_id": "char(36) - PRIMARY KEY",
+      "building_number": "varchar(10) - nullable",
+      "name": "varchar(255) - not null",
+      "description": "text - nullable",
+      "x": "float - not null",
+      "y": "float - not null",
+      "width": "float - not null",
+      "height": "float - not null",
+      "color": "varchar(20) - nullable",
+      "stroke_color": "varchar(20) - nullable",
+      "label_color": "varchar(20) - nullable",
+      "created_at": "timestamp - nullable",
+      "updated_at": "timestamp - nullable"
+    },
+    "description": "Information about buildings in the expo, including locations, sizes, and colors."
+  },
+  "borders": {
+    "columns": {
+      "border_id": "char(36) - PRIMARY KEY",
+      "type": "varchar(20) - not null",
+      "orientation": "varchar(20) - not null",
+      "x1": "float - not null",
+      "y1": "float - not null",
+      "x2": "float - not null",
+      "y2": "float - not null",
+      "length": "float - not null",
+      "thickness": "int - not null",
+      "stroke_style": "varchar(20) - not null",
+      "color": "varchar(10) - not null",
+      "is_static": "tinyint(1) - nullable",
+      "created_at": "timestamp - nullable",
+      "updated_at": "timestamp - nullable"
+    },
+    "description": "Information about borders or separators within the map or expo."
+  }
+}

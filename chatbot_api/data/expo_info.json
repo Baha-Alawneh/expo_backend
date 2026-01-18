@@ -1,0 +1,54 @@
+{
+  "expo_overview": {
+    "name": "University Expo Project",
+    "description": "A comprehensive expo platform that connects students, companies, and visitors. The expo features student projects, company booths, service offerings, and interactive features like reels and feedback systems.",
+    "purpose": "To showcase student innovation, facilitate industry connections, and provide a platform for companies to offer services and opportunities to students."
+  },
+  "features": {
+    "project_showcase": "Students can submit their engineering or science projects for approval and exhibition at the expo. Projects include descriptions, photos, videos, and GitHub links.",
+    "company_participation": "Companies can register as sponsors or service providers, get assigned booths, and create offerings for students.",
+    "booth_system": "Interactive map system with various booth types (engineering, science, sponsor, service zones) with customizable layouts and locations.",
+    "feedback_system": "Users can rate and comment on projects and companies to provide constructive feedback.",
+    "reels_feature": "Short video clips that users can post to showcase quick highlights or demos.",
+    "user_roles": "Four distinct roles - Visitors (general public), Students (project creators), Companies (sponsors/service providers), and Admins (expo management)."
+  },
+  "user_types": {
+    "visitor": {
+      "description": "General public who can browse the expo, view projects, companies, and provide feedback.",
+      "capabilities": ["Browse projects", "View company booths", "Rate and comment", "Watch reels"]
+    },
+    "student": {
+      "description": "University students who can create profiles, submit projects, and collaborate with other students.",
+      "capabilities": ["Create profile with CV and skills", "Submit projects", "Collaborate in teams", "Get assigned booths for approved projects", "Post reels"]
+    },
+    "company": {
+      "description": "Organizations participating as sponsors or service providers.",
+      "capabilities": ["Create company profile", "Get assigned booth", "Create service offerings", "Interact with students", "Post company reels"]
+    },
+    "admin": {
+      "description": "Expo management with full control over the platform.",
+      "capabilities": ["Approve/reject projects", "Approve/reject offerings", "Manage booths", "Manage users", "View analytics", "Send notifications"]
+    }
+  },
+  "project_types": {
+    "engineering": "Technical and engineering projects showcasing innovations, prototypes, and solutions.",
+    "science": "Scientific research projects, experiments, and discoveries."
+  },
+  "booth_zones": {
+    "engineering": "Zone designated for approved engineering student projects.",
+    "science": "Zone designated for approved science student projects.",
+    "sponsor": "Zone for sponsoring companies to showcase their brand.",
+    "service": "Zone for companies offering services to students.",
+    "standard": "General purpose booths."
+  },
+  "offering_status_flow": {
+    "pending": "Newly submitted offerings awaiting admin review.",
+    "approved": "Offerings approved by admin and visible to users.",
+    "rejected": "Offerings that did not meet expo criteria."
+  },
+  "project_status_flow": {
+    "pending": "Newly submitted projects awaiting admin review.",
+    "approved": "Projects approved by admin, eligible for booth assignment and expo participation.",
+    "rejected": "Projects that did not meet expo criteria."
+  }
+}

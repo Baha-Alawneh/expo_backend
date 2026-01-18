@@ -1,0 +1,62 @@
+{
+  "general_faqs": [
+    {
+      "question": "What is this expo about?",
+      "answer": "This is a University Expo Platform that connects students, companies, and visitors. It showcases student projects (engineering and science), allows companies to participate as sponsors or service providers, and provides interactive features like booth systems, feedback, and reels."
+    },
+    {
+      "question": "Who can participate in the expo?",
+      "answer": "There are four types of participants: Visitors (general public who can browse and provide feedback), Students (who can submit projects and create profiles), Companies (sponsors or service providers), and Admins (expo management)."
+    },
+    {
+      "question": "What types of projects can be submitted?",
+      "answer": "Students can submit two types of projects: Engineering projects (technical innovations, prototypes, solutions) and Science projects (scientific research, experiments, discoveries). All projects must be approved by admins before being showcased."
+    },
+    {
+      "question": "How does the booth system work?",
+      "answer": "The expo has an interactive map with different booth zones: Engineering zone for engineering projects, Science zone for science projects, Sponsor zone for sponsoring companies, Service zone for service-providing companies, and Standard booths for general use. Booths can have different shapes (rectangle, L-shapes) and customizable layouts."
+    },
+    {
+      "question": "What can companies do in the expo?",
+      "answer": "Companies can create profiles, get assigned booths, create service offerings for students, interact with student projects, and post reels. Companies can participate either as sponsors or service providers."
+    },
+    {
+      "question": "What is the feedback system?",
+      "answer": "Users can rate and leave comments on both projects and companies. This helps provide constructive feedback and allows others to see the quality and reception of different projects and services."
+    },
+    {
+      "question": "What are reels in this platform?",
+      "answer": "Reels are short video clips that users (students, companies, or visitors) can post to showcase quick highlights, demos, or announcements related to the expo."
+    },
+    {
+      "question": "How do project approvals work?",
+      "answer": "Students submit their projects with descriptions, photos, videos, and GitHub links. Projects start with 'pending' status and must be reviewed by admins who can either approve them (making them eligible for booth assignment) or reject them."
+    },
+    {
+      "question": "What information can students add to their profiles?",
+      "answer": "Students can add their university ID, major, year of study, skills (in JSON format), bio, CV, and profile photo. This helps companies and visitors learn more about the students behind the projects."
+    },
+    {
+      "question": "Can students work on projects together?",
+      "answer": "Yes! The platform supports team projects through the ProjectMembers system, which links multiple students to a single project."
+    }
+  ],
+  "technical_faqs": [
+    {
+      "question": "What data does the system store?",
+      "answer": "The system stores user accounts, student profiles, projects, company information, service offerings, feedback/ratings, reels, booth information, buildings, and expo map borders."
+    },
+    {
+      "question": "How are users authenticated?",
+      "answer": "The system uses both traditional authentication (email/password with password hashing) and Firebase authentication for enhanced security and flexibility."
+    },
+    {
+      "question": "What project statuses are available?",
+      "answer": "Projects can have three statuses: 'pending' (newly submitted awaiting review), 'approved' (accepted and eligible for booth assignment), or 'rejected' (did not meet criteria)."
+    },
+    {
+      "question": "What offering statuses exist?",
+      "answer": "Company offerings can be 'pending' (awaiting admin review), 'approved' (visible to users), or 'rejected' (did not meet expo criteria)."
+    }
+  ]
+}
