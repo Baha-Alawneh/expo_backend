@@ -357,6 +357,22 @@ export const unassign = async (boothId) => {
 };
 
 /**
+ * Unassign all booths (clear all assignments)
+ */
+export const unassignAll = async () => {
+  const [result] = await pool.execute(
+    `UPDATE Booths 
+     SET assigned_to_project = NULL, assigned_to_company = NULL`
+  );
+
+  return {
+    success: true,
+    message: `${result.affectedRows} booth(s) unassigned successfully`,
+    count: result.affectedRows
+  };
+};
+
+/**
  * Get next available custom booth number
  * Returns the next "C-X" number
  */
@@ -375,4 +391,33 @@ export const getNextCustomBoothNumber = async () => {
   const lastNumber = rows[0].booth_number;
   const numberPart = parseInt(lastNumber.split('-')[1]);
   return `C-${numberPart + 1}`;
+};
+
+/**
+ * Batch update booth positions
+ * @param {Array} updates - Array of {booth_id, location_x, location_y}
+ * @returns {Promise<number>} Number of booths updated
+ */
+export const batchUpdatePositions = async (updates) => {
+  if (!updates || updates.length === 0) return 0;
+  
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    
+    for (const update of updates) {
+      await connection.execute(
+        'UPDATE Booths SET location_x = ?, location_y = ? WHERE booth_id = ?',
+        [update.location_x, update.location_y, update.booth_id]
+      );
+    }
+    
+    await connection.commit();
+    return updates.length;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 };

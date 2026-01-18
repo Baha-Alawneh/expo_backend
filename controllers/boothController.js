@@ -309,9 +309,33 @@ export const unassignBooth = async (req, res) => {
 };
 
 /**
+ * PATCH /booths/unassign-all
+ * Unassign all booths (Admin only)
+ */
+export const unassignAllBooths = async (req, res) => {
+  try {
+    const result = await Booth.unassignAll();
+
+    res.json({
+      success: true,
+      message: result.message,
+      count: result.count
+    });
+  } catch (error) {
+    console.error('Error unassigning all booths:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error unassigning all booths',
+      error: error.message
+    });
+  }
+};
+
+/**
  * GET /booths/next-custom-number
  * Get next available custom booth number (C-1, C-2, etc.)
  */
+
 export const getNextCustomBoothNumber = async (req, res) => {
   try {
     const nextNumber = await Booth.getNextCustomBoothNumber();
@@ -326,6 +350,38 @@ export const getNextCustomBoothNumber = async (req, res) => {
       success: false,
       message: 'Error getting next custom booth number',
       error: error.message
+    });
+  }
+};
+
+/**
+ * PATCH /booths/batch
+ * Batch update booth positions (Admin only)
+ */
+export const batchUpdateBooths = async (req, res) => {
+  try {
+    const { booths } = req.body;
+    
+    if (!booths || !Array.isArray(booths) || booths.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'booths array is required' 
+      });
+    }
+    
+    const updatedCount = await Booth.batchUpdatePositions(booths);
+    
+    res.status(200).json({ 
+      success: true,
+      message: `Successfully updated ${updatedCount} booths`,
+      count: updatedCount 
+    });
+  } catch (error) {
+    console.error('Error batch updating booths:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to batch update booths', 
+      error: error.message 
     });
   }
 };

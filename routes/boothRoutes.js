@@ -7,6 +7,8 @@ import {
   deleteBooth,
   assignBooth,
   unassignBooth,
+  unassignAllBooths,
+  batchUpdateBooths,
   getNextCustomBoothNumber
 } from '../controllers/boothController.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
@@ -34,6 +36,9 @@ router.post('/booths', authenticateToken, authorizeRole('admin'), createBooth);
 // Update booth properties (location, size, zone, etc.)
 router.put('/booths/:id', authenticateToken, authorizeRole('admin'), updateBooth);
 
+// Batch update booth positions
+router.patch('/booths/batch', authenticateToken, authorizeRole('admin'), batchUpdateBooths);
+
 // Delete booth
 router.delete('/booths/:id', authenticateToken, authorizeRole('admin'), deleteBooth);
 
@@ -42,6 +47,9 @@ router.put('/booths/:id/assign', authenticateToken, authorizeRole('admin'), assi
 
 // Unassign booth
 router.put('/booths/:id/unassign', authenticateToken, authorizeRole('admin'), unassignBooth);
+
+// Unassign all booths
+router.patch('/booths/unassign-all', authenticateToken, authorizeRole('admin'), unassignAllBooths);
 
 // Get next available custom booth number (C-1, C-2, ...)
 router.get('/booths-util/next-custom-number', authenticateToken, authorizeRole('admin'), getNextCustomBoothNumber);

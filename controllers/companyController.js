@@ -803,3 +803,73 @@ export const uploadOfferingImagesController = async (req, res) => {
     });
   }
 };
+
+// ================================================
+// =============== DELETE OFFERING ================
+// ================================================
+export const deleteOfferingController = async (req, res) => {
+  try {
+    const { user_id } = req.params;
+
+    // Get company by user_id
+    const company = await Company.getCompanyById(user_id);
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: "Company not found",
+      });
+    }
+
+    // Get the offering before deleting (to delete S3 images if needed)
+    const offering = await Offering.getOfferingByCompanyId(company.company_id);
+
+    if (!offering) {
+      return res.status(404).json({
+        success: false,
+        message: "Offering not found",
+      });
+    }
+
+    // Delete the offering from database first
+    const deleted = await Offering.deleteOffering(company.company_id);
+    
+    // Then try to delete offering images from S3 if they exist (non-blocking)
+    if (offering.images && offering.images.length > 0) {
+      offering.images.forEach(async (imageKey) => {
+        try {
+          if (imageKey && typeof imageKey === 'string' && imageKey.trim()) {
+            await s3.send(
+              new DeleteObjectCommand({
+                Bucket: process.env.AWS_BUCKET_NAME,
+                Key: imageKey,
+              })
+            );
+            console.log(`Deleted image ${imageKey} from S3`);
+          }
+        } catch (error) {
+          console.error(`Error deleting image ${imageKey} from S3:`, error);
+          // Don't fail the delete operation if S3 deletion fails
+        }
+      });
+    }
+
+    if (!deleted) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to delete offering",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Offering deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete offering error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error deleting offering",
+    });
+  }
+};

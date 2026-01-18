@@ -10,6 +10,7 @@ import {
   getOfferingByCompanyIdController,
   createOfferingController,
   updateOfferingController,
+  deleteOfferingController,
   getUnassignedCompaniesController,
   assignBoothToCompanyController,
   unassignBoothFromCompanyController,
@@ -94,6 +95,13 @@ router.put(
   authenticateToken,
   authorizeUser,
   updateOfferingController
+);
+
+router.delete(
+  "/offering/:user_id",
+  authenticateToken,
+  authorizeUser,
+  deleteOfferingController
 );
 
 // Booth assignment routes
