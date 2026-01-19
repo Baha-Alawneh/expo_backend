@@ -3,6 +3,7 @@ import {
   getAllCompaniesController,
   getCompanyController,
   getCompanyByIdController,
+  getCompanyStatusController,
   updateCompanyController,
   uploadCompanyFileController,
   deleteCompanyFileController,
@@ -25,6 +26,9 @@ const router = express.Router();
 
 // Get all companies (for Companies tab)
 router.get("/", authenticateToken, getAllCompaniesController);
+
+// Get company status by user_id
+router.get("/status/:user_id", authenticateToken, getCompanyStatusController);
 
 // Get company by company_id
 router.get(
@@ -76,7 +80,14 @@ router.get(
   getOfferingController
 );
 
-// Get offering by company_id (public - for viewing other companies' offerings)
+// Get all offerings by company_id (public - for viewing other companies' offerings)
+router.get(
+  "/:company_id/offerings",
+  authenticateToken,
+  getOfferingController
+);
+
+// Get single offering by company_id (deprecated - use above for all offerings)
 router.get(
   "/offering/company/:company_id",
   authenticateToken,
