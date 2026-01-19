@@ -26,7 +26,7 @@ export const registerUser = async (req, res) => {
     if (role === "student") {
       await createStudent(userId);
     } else if (role === "company") {
-      await createCompany(userId);
+      await createCompany(userId, name);
     }
     // Visitors don't need additional records
 

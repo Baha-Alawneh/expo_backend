@@ -5,8 +5,10 @@ import {
   getProjectsByStatus,
   updateProjectStatus,
   getPendingOfferings,
+  getPendingCompanies,
   getOfferingsByStatus,
   updateOfferingStatus,
+  updateCompanyStatus,
   sendNotification,
   getAllUsers,
   getUserRegistrations,
@@ -28,7 +30,11 @@ router.get("/projects/pending", getPendingProjects);
 router.get("/projects/status/:status", getProjectsByStatus);
 router.patch("/projects/:project_id/status", updateProjectStatus);
 
-// Pending Offerings
+// Pending Companies (new company approval workflow)
+router.get("/companies/pending", getPendingCompanies);
+router.patch("/companies/:company_id/status", updateCompanyStatus);
+
+// Pending Offerings (deprecated - redirects to companies)
 router.get("/offerings/pending", getPendingOfferings);
 router.get("/offerings/status/:status", getOfferingsByStatus);
 router.patch("/offerings/:offering_id/status", updateOfferingStatus);

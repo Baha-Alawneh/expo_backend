@@ -27,19 +27,19 @@ export const getDashboardStats = async (req, res) => {
       FROM Projects
     `);
 
-    // Get company count (Companies table has no status column)
-    const [companyCount] = await pool.execute(`
-      SELECT COUNT(*) as total_companies FROM Companies
+    // Get company statistics (status now on Companies table)
+    const [companyStats] = await pool.execute(`
+      SELECT 
+        COUNT(*) as total_companies,
+        SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_companies,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_companies,
+        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_companies
+      FROM Companies
     `);
 
-    // Get offering statistics (status column exists in Offering table)
-    const [offeringStats] = await pool.execute(`
-      SELECT 
-        COUNT(*) as total_offerings,
-        SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_offerings,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_offerings,
-        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_offerings
-      FROM Offering
+    // Get offering count (no status - offerings shown for approved companies only)
+    const [offeringCount] = await pool.execute(`
+      SELECT COUNT(*) as total_offerings FROM Offering
     `);
 
     // Get student count
@@ -75,13 +75,13 @@ export const getDashboardStats = async (req, res) => {
           rejected: projectStats[0].rejected_projects,
         },
         companies: {
-          total: companyCount[0].total_companies,
+          total: companyStats[0].total_companies,
+          approved: companyStats[0].approved_companies,
+          pending: companyStats[0].pending_companies,
+          rejected: companyStats[0].rejected_companies,
         },
         offerings: {
-          total: offeringStats[0].total_offerings,
-          approved: offeringStats[0].approved_offerings,
-          pending: offeringStats[0].pending_offerings,
-          rejected: offeringStats[0].rejected_offerings,
+          total: offeringCount[0].total_offerings,
         },
         students: {
           total: studentCount[0].total_students,
@@ -472,63 +472,30 @@ export const updateProjectStatus = async (req, res) => {
 };
 
 // Get All Pending Offerings
-export const getPendingOfferings = async (req, res) => {
+// Get Pending Companies for Approval
+export const getPendingCompanies = async (req, res) => {
   try {
-    console.log('[Admin] Fetching pending offerings...');
-    const [offerings] = await pool.execute(`
+    console.log('[Admin] Fetching pending companies...');
+    const [companies] = await pool.execute(`
       SELECT 
-        o.*,
-        c.company_name,
-        u.email as company_email
-      FROM Offering o
-      LEFT JOIN Companies c ON o.company_id = c.company_id
+        c.*,
+        u.name,
+        u.email,
+        u.created_at as user_created_at
+      FROM Companies c
       LEFT JOIN Users u ON c.user_id = u.user_id
-      WHERE o.status = 'pending'
-      ORDER BY o.created_at DESC
+      WHERE c.status = 'pending'
+      ORDER BY u.created_at DESC
     `);
 
-    console.log(`[Admin] Found ${offerings.length} pending offerings`);
-
-    // Parse offering photos for each offering
-    const offeringsWithImages = offerings.map((offering) => {
-      let images = [];
-      if (offering.offering_photos) {
-        try {
-          // Check if already parsed (object) or needs parsing (string)
-          const parsedPhotos = typeof offering.offering_photos === 'string' 
-            ? JSON.parse(offering.offering_photos) 
-            : offering.offering_photos;
-          
-          // Extract URIs from image picker objects or use S3 keys directly
-          if (Array.isArray(parsedPhotos)) {
-            images = parsedPhotos.map(photo => {
-              // If it's an object with uri, extract the uri
-              if (typeof photo === 'object' && photo.uri) {
-                return photo.uri;
-              }
-              // If it's a string (S3 key), use it directly
-              if (typeof photo === 'string') {
-                return photo;
-              }
-              return null;
-            }).filter(Boolean);
-          }
-        } catch (e) {
-          images = [];
-        }
-      }
-      return {
-        ...offering,
-        images,
-      };
-    });
+    console.log(`[Admin] Found ${companies.length} pending companies`);
 
     res.status(200).json({
       success: true,
-      data: offeringsWithImages,
+      data: companies,
     });
   } catch (error) {
-    console.error("Error fetching pending offerings:", error);
+    console.error("Error fetching pending companies:", error);
     console.error("Error details:", {
       message: error.message,
       code: error.code,
@@ -538,18 +505,25 @@ export const getPendingOfferings = async (req, res) => {
     });
     res.status(500).json({
       success: false,
-      message: "Failed to fetch pending offerings",
+      message: "Failed to fetch pending companies",
       error: error.message,
     });
   }
 };
 
+// DEPRECATED: Use getPendingCompanies instead
+// This function is kept for backward compatibility but now fetches companies
+export const getPendingOfferings = async (req, res) => {
+  return getPendingCompanies(req, res);
+};
+
 // Get Offerings by Status (pending, approved, rejected)
+// NOTE: Now filters by company status instead of offering status
 export const getOfferingsByStatus = async (req, res) => {
   try {
     const { status } = req.params;
 
-    console.log(`[Admin] Fetching offerings with status: ${status}`);
+    console.log(`[Admin] Fetching offerings for companies with status: ${status}`);
 
     // Validate status
     if (!['pending', 'approved', 'rejected'].includes(status)) {
@@ -564,11 +538,12 @@ export const getOfferingsByStatus = async (req, res) => {
         o.*,
         c.company_name,
         c.profile_image,
+        c.status as company_status,
         u.email as company_email
       FROM Offering o
       LEFT JOIN Companies c ON o.company_id = c.company_id
       LEFT JOIN Users u ON c.user_id = u.user_id
-      WHERE o.status = ?
+      WHERE c.status = ?
       ORDER BY o.created_at DESC
     `, [status]);
 
@@ -683,9 +658,10 @@ export const getOfferingsByStatus = async (req, res) => {
 };
 
 // Approve/Reject Offering
-export const updateOfferingStatus = async (req, res) => {
+// Update Company Status (Approve/Reject)
+export const updateCompanyStatus = async (req, res) => {
   try {
-    const { offering_id } = req.params;
+    const { company_id } = req.params;
     const { status, rejection_reason } = req.body; // 'approved' or 'rejected', optional rejection_reason
 
     if (!["approved", "rejected"].includes(status)) {
@@ -699,69 +675,107 @@ export const updateOfferingStatus = async (req, res) => {
     if (status === "rejected" && (!rejection_reason || rejection_reason.trim() === "")) {
       return res.status(400).json({
         success: false,
-        message: "Rejection reason is required when rejecting an offering",
+        message: "Rejection reason is required when rejecting a company",
       });
     }
 
-    // Get offering details before updating
-    const [offeringRows] = await pool.execute(
-      `SELECT o.name, o.company_id, u.user_id
-       FROM Offering o
-       JOIN Companies c ON o.company_id = c.company_id
+    // Get company details before updating
+    const [companyRows] = await pool.execute(
+      `SELECT c.company_name, c.user_id, u.email
+       FROM Companies c
        JOIN Users u ON c.user_id = u.user_id
-       WHERE o.offering_id = ?`,
-      [offering_id]
+       WHERE c.company_id = ?`,
+      [company_id]
     );
 
-    if (offeringRows.length === 0) {
+    if (companyRows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: "Offering not found",
+        message: "Company not found",
       });
     }
 
-    const offering = offeringRows[0];
+    const company = companyRows[0];
 
-    // Update offering status
+    // Update company status
     await pool.execute(
-      `UPDATE Offering SET status = ? WHERE offering_id = ?`,
-      [status, offering_id]
+      `UPDATE Companies SET status = ? WHERE company_id = ?`,
+      [status, company_id]
     );
 
     // Send notification based on status
     if (status === "approved") {
       try {
-        await sendNotificationToUsers([offering.user_id], {
-          title: "Offer Approved",
-          message: `Your offer "${offering.name}" has been approved.`,
+        await sendNotificationToUsers([company.user_id], {
+          title: "Company Approved",
+          message: `Your company "${company.company_name}" has been approved. You can now add offerings.`,
           icon: "checkmark-circle"
         });
       } catch (notifError) {
-        console.error("Error sending offer approval notification:", notifError);
+        console.error("Error sending company approval notification:", notifError);
         // Don't fail the request if notification fails
       }
     } else if (status === "rejected") {
       try {
-        await sendNotificationToUsers([offering.user_id], {
-          title: "Offer Rejected",
-          message: `Your offer "${offering.name}" has been rejected. Reason: ${rejection_reason}`,
+        await sendNotificationToUsers([company.user_id], {
+          title: "Company Rejected",
+          message: `Your company "${company.company_name}" has been rejected. Reason: ${rejection_reason}`,
           icon: "close-circle"
         });
       } catch (notifError) {
-        console.error("Error sending offer rejection notification:", notifError);
+        console.error("Error sending company rejection notification:", notifError);
         // Don't fail the request if notification fails
       }
     }
 
     res.status(200).json({
       success: true,
-      message: `Offering ${status} successfully`,
+      message: `Company ${status} successfully`,
+      data: {
+        company_id,
+        company_name: company.company_name,
+        status,
+      },
     });
   } catch (error) {
-    console.error("Error updating offering status:", error);
+    console.error("Error updating company status:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update company status",
+      error: error.message,
+    });
+  }
+};
+
+// DEPRECATED: Use updateCompanyStatus instead
+// This function is kept for backward compatibility
+export const updateOfferingStatus = async (req, res) => {
+  // Map offering_id to company_id
+  try {
+    const { offering_id } = req.params;
+    
+    // Get company_id from offering_id
+    const [rows] = await pool.execute(
+      `SELECT company_id FROM Offering WHERE offering_id = ?`,
+      [offering_id]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Offering not found",
+      });
+    }
+    
+    // Call updateCompanyStatus with company_id
+    req.params.company_id = rows[0].company_id;
+    return updateCompanyStatus(req, res);
+  } catch (error) {
+    console.error("Error in updateOfferingStatus:", error);
     res.status(500).json({
       success: false,
       message: "Failed to update offering status",
+      error: error.message,
     });
   }
 };

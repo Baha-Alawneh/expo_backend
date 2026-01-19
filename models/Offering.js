@@ -46,6 +46,53 @@ export const getOfferingByCompanyId = async (company_id) => {
   };
 };
 
+// Get all offerings by company_id (supports multiple offerings per company)
+export const getAllOfferingsByCompanyId = async (company_id) => {
+  const [rows] = await pool.execute(
+    `SELECT * FROM Offering WHERE company_id = ? ORDER BY name ASC`,
+    [company_id]
+  );
+
+  if (rows.length === 0) return [];
+
+  // Process each offering
+  const offerings = await Promise.all(
+    rows.map(async (offering) => {
+      // Parse offering_photos
+      let images = [];
+      if (offering.offering_photos) {
+        if (Array.isArray(offering.offering_photos)) {
+          images = offering.offering_photos.filter(
+            (photo) => photo && typeof photo === 'string' && photo.trim().length > 0
+          );
+        } else if (typeof offering.offering_photos === 'string') {
+          try {
+            const parsed = JSON.parse(offering.offering_photos);
+            images = Array.isArray(parsed) ? parsed.filter(
+              (photo) => photo && typeof photo === 'string' && photo.trim().length > 0
+            ) : [];
+          } catch (e) {
+            console.error("Error parsing offering_photos:", e);
+            images = [];
+          }
+        }
+      }
+
+      // Get rating stats
+      const ratingStats = await getOfferingAverageRating(offering.offering_id);
+
+      return {
+        ...offering,
+        images,
+        average_rating: ratingStats.average_rating,
+        total_ratings: ratingStats.total_ratings,
+      };
+    })
+  );
+
+  return offerings;
+};
+
 // Create new offering for company
 export const createOffering = async (company_id, data) => {
   const { name, description, price, offering_photos, type } = data;
@@ -109,15 +156,13 @@ export const updateOffering = async (company_id, data) => {
          name = COALESCE(?, name), 
          description = COALESCE(?, description), 
          price = COALESCE(?, price), 
-         offering_photos = ?,
-         status = 'pending'
+         offering_photos = ?
        WHERE company_id = ?`
     : `UPDATE Offering 
        SET 
          name = COALESCE(?, name), 
          description = COALESCE(?, description), 
-         price = COALESCE(?, price), 
-         status = 'pending'
+         price = COALESCE(?, price)
        WHERE company_id = ?`;
 
   const params = shouldUpdatePhotos
@@ -143,8 +188,14 @@ export const getAllOfferings = async (sortBy = null, sortOrder = "DESC") => {
     orderByClause = "ORDER BY offering_id DESC";
   }
 
-  // Only fetch approved offerings
-  const [rows] = await pool.execute(`SELECT * FROM Offering WHERE status = 'approved' ${orderByClause}`);
+  // Only fetch offerings from approved companies
+  const [rows] = await pool.execute(
+    `SELECT o.* 
+     FROM Offering o
+     INNER JOIN Companies c ON o.company_id = c.company_id
+     WHERE c.status = 'approved'
+     ${orderByClause}`
+  );
 
   // For each offering, get rating stats
   const offeringsWithRatings = await Promise.all(

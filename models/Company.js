@@ -1,11 +1,11 @@
 import pool from "../config/db.js";
 import { v4 as uuidv4 } from "uuid";
 
-export const createCompany = async (user_id) => {
+export const createCompany = async (user_id, name = null) => {
   const company_id = uuidv4();
   await pool.execute(
-    `INSERT INTO Companies (company_id, user_id) VALUES (?, ?)`,
-    [company_id, user_id]
+    `INSERT INTO Companies (company_id, user_id, company_name, status) VALUES (?, ?, ?, 'pending')`,
+    [company_id, user_id, name]
   );
   return { company_id, user_id };
 };
@@ -25,6 +25,7 @@ export const getCompanyByCompanyId = async (company_id) => {
         c.booth_id,
         c.profile_image,
         c.website_url,
+        c.status,
         u.name,
         u.email
      FROM Companies AS c
@@ -50,6 +51,7 @@ export const getCompanyByCompanyId = async (company_id) => {
     booth_id: company.booth_id || "",
     profile_image: company.profile_image || null,
     website_url: company.website_url || "",
+    status: company.status || "pending",
   };
 };
 
@@ -68,6 +70,7 @@ export const getCompanyById = async (user_id) => {
         c.booth_id,
         c.profile_image,
         c.website_url,
+        c.status,
         u.name,
         u.email
      FROM Companies AS c
@@ -93,6 +96,7 @@ export const getCompanyById = async (user_id) => {
     booth_id: company.booth_id || "",
     profile_image: company.profile_image || null,
     website_url: company.website_url || "",
+    status: company.status || "pending",
   };
 };
 
@@ -111,6 +115,7 @@ export const getCompanyByEmail = async (email) => {
         c.booth_id,
         c.profile_image,
         c.website_url,
+        c.status,
         u.name,
         u.email
      FROM Companies AS c
@@ -136,6 +141,7 @@ export const getCompanyByEmail = async (email) => {
     booth_id: company.booth_id || "",
     profile_image: company.profile_image || null,
     website_url: company.website_url || "",
+    status: company.status || "pending",
   };
 };
 
@@ -216,7 +222,8 @@ export const getAllCompanies = async () => {
       booth_id,
       profile_image,
       website_url,
-      address
+      address,
+      status
     FROM Companies
     ORDER BY company_name ASC`
   );
@@ -237,7 +244,8 @@ export const getUnassignedCompanies = async () => {
       type,
       description,
       phone,
-      website_url
+      website_url,
+      status
     FROM Companies
     WHERE booth_id IS NULL OR booth_id = ''
     ORDER BY company_name ASC`
@@ -280,4 +288,68 @@ export const unassignBoothFromCompany = async (company_id) => {
     `UPDATE Companies SET booth_id = NULL WHERE company_id = ?`,
     [company_id]
   );
+};
+
+// ================================================
+// ============== COMPANY APPROVAL ================
+// ================================================
+
+export const getPendingCompanies = async () => {
+  const [rows] = await pool.query(
+    `SELECT 
+      c.company_id,
+      c.user_id,
+      c.company_name,
+      c.type,
+      c.description,
+      c.phone,
+      c.address,
+      c.profile_image,
+      c.website_url,
+      c.status,
+      u.name,
+      u.email,
+      u.created_at
+    FROM Companies AS c
+    JOIN Users AS u ON c.user_id = u.user_id
+    WHERE c.status = 'pending'
+    ORDER BY u.created_at DESC`
+  );
+
+  return rows;
+};
+
+export const updateCompanyStatus = async (company_id, status) => {
+  const [result] = await pool.execute(
+    `UPDATE Companies SET status = ? WHERE company_id = ?`,
+    [status, company_id]
+  );
+
+  if (result.affectedRows === 0) {
+    throw new Error('Company not found');
+  }
+
+  return await getCompanyByCompanyId(company_id);
+};
+
+export const getApprovedCompanies = async () => {
+  const [rows] = await pool.query(
+    `SELECT 
+      company_id,
+      user_id,
+      company_name,
+      type,
+      description,
+      phone,
+      booth_id,
+      profile_image,
+      website_url,
+      address,
+      status
+    FROM Companies
+    WHERE status = 'approved'
+    ORDER BY company_name ASC`
+  );
+
+  return rows;
 };

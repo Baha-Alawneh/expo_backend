@@ -304,58 +304,71 @@ export const deleteCompanyFileController = async (req, res) => {
 };
 
 // ================================================
-// =============== GET OFFERING ====================
+// ========= GET OFFERINGS BY COMPANY =============
 // ================================================
+// This works for both user_id and company_id
 export const getOfferingController = async (req, res) => {
   try {
-    const { user_id } = req.params;
+    const { user_id, company_id } = req.params;
+    const id = user_id || company_id;
 
-    // First get company_id from user_id
-    const company = await Company.getCompanyById(user_id);
+    // Try to get company by user_id first, then by company_id
+    let company = await Company.getCompanyById(id);
+    if (!company) {
+      company = await Company.getCompanyByCompanyId(id);
+    }
     if (!company) {
       return res
         .status(404)
         .json({ success: false, message: "Company not found" });
     }
 
-    const offering = await Offering.getOfferingByCompanyId(company.company_id);
+    // Get all offerings for the company
+    const offerings = await Offering.getAllOfferingsByCompanyId(company.company_id);
 
-    if (!offering) {
+    if (!offerings || offerings.length === 0) {
       return res.status(404).json({
         success: false,
-        message: "No offering found",
+        message: "No offerings found",
         notFound: true,
       });
     }
 
-    console.log("Offering from DB:", offering);
-    console.log("Images array:", offering.images);
+    console.log("Offerings from DB:", offerings);
 
-    // Generate signed URLs for offering photos
-    if (offering.images && Array.isArray(offering.images) && offering.images.length > 0) {
-      const signedImageUrls = await Promise.all(
-        offering.images.map(async (imageKey) => {
-          try {
-            const command = new GetObjectCommand({
-              Bucket: process.env.S3_BUCKET_NAME,
-              Key: imageKey,
-            });
-            return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
-          } catch (error) {
-            console.error("Error generating signed URL for:", imageKey, error);
-            return null;
-          }
-        })
-      );
-      offering.offering_photos = signedImageUrls.filter(Boolean);
-      console.log("Generated signed URLs:", offering.offering_photos);
-    } else {
-      offering.offering_photos = [];
-    }
+    // Generate signed URLs for each offering's photos
+    const offeringsWithSignedUrls = await Promise.all(
+      offerings.map(async (offering) => {
+        console.log("Images array for offering:", offering.offering_id, offering.images);
 
-    res.json({ success: true, data: offering });
+        if (offering.images && Array.isArray(offering.images) && offering.images.length > 0) {
+          const signedImageUrls = await Promise.all(
+            offering.images.map(async (imageKey) => {
+              try {
+                const command = new GetObjectCommand({
+                  Bucket: process.env.S3_BUCKET_NAME,
+                  Key: imageKey,
+                });
+                return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+              } catch (error) {
+                console.error("Error generating signed URL for:", imageKey, error);
+                return null;
+              }
+            })
+          );
+          offering.offering_photos = signedImageUrls.filter(Boolean);
+          console.log("Generated signed URLs:", offering.offering_photos);
+        } else {
+          offering.offering_photos = [];
+        }
+
+        return offering;
+      })
+    );
+
+    res.json({ success: true, data: offeringsWithSignedUrls });
   } catch (error) {
-    console.error("Error fetching offering:", error);
+    console.error("Error fetching offerings:", error);
     res
       .status(500)
       .json({ success: false, message: "Error fetching offering" });
@@ -870,6 +883,42 @@ export const deleteOfferingController = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error deleting offering",
+    });
+  }
+};
+
+// ================================================
+// =============== GET COMPANY STATUS =============
+// ================================================
+export const getCompanyStatusController = async (req, res) => {
+  try {
+    const { user_id } = req.params;
+
+    if (!user_id) {
+      return res.status(400).json({
+        success: false,
+        message: "user_id is required"
+      });
+    }
+
+    const company = await Company.getCompanyById(user_id);
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: "Company not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      status: company.status || "pending"
+    });
+  } catch (error) {
+    console.error("Error fetching company status:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching company status"
     });
   }
 };
