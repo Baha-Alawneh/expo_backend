@@ -183,7 +183,7 @@ export const getPendingProjects = async (req, res) => {
                       Bucket: process.env.S3_BUCKET_NAME,
                       Key: imageKey,
                     });
-                    return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+                    return await getSignedUrlSDK(s3, command, { expiresIn: 7 * 24 * 60 * 60 }); // 7 days
                   } catch (err) {
                     console.error("Error generating signed URL:", imageKey, err.message);
                     return null;
@@ -316,7 +316,7 @@ export const getProjectsByStatus = async (req, res) => {
                       Bucket: process.env.S3_BUCKET_NAME,
                       Key: imageKey,
                     });
-                    return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+                    return await getSignedUrlSDK(s3, command, { expiresIn: 7 * 24 * 60 * 60 }); // 7 days
                   } catch (err) {
                     console.error("Error generating signed URL:", imageKey, err.message);
                     return null;
@@ -574,7 +574,7 @@ export const getOfferingsByStatus = async (req, res) => {
                         Bucket: process.env.S3_BUCKET_NAME,
                         Key: photo,
                       });
-                      const url = await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+                      const url = await getSignedUrlSDK(s3, command, { expiresIn: 7 * 24 * 60 * 60 }); // 7 days
                       console.log('Generated URL:', url);
                       return url;
                     } 
@@ -611,7 +611,7 @@ export const getOfferingsByStatus = async (req, res) => {
               Bucket: process.env.S3_BUCKET_NAME,
               Key: offering.profile_image,
             });
-            profileImageUrl = await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+            profileImageUrl = await getSignedUrlSDK(s3, command, { expiresIn: 7 * 24 * 60 * 60 }); // 7 days
           } catch (err) {
             console.error("Error generating signed URL for profile image:", err.message);
           }

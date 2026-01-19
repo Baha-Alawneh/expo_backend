@@ -23,7 +23,7 @@ const generateSignedUrl = async (key) => {
     Key: key,
   });
   
-  return await getSignedUrlSDK(s3, command, { expiresIn: 3600 }); // 1 hour
+  return await getSignedUrlSDK(s3, command, { expiresIn: 7 * 24 * 60 * 60 }); // 7 days // 1 hour
 };
 
 // ================================================

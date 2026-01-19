@@ -37,7 +37,7 @@ export const getAllCompaniesController = async (req, res) => {
               Key: company.profile_image,
             });
             company.profile_image_url = await getSignedUrlSDK(s3, command, {
-              expiresIn: 3600,
+              expiresIn: 7 * 24 * 60 * 60 // 7 days,
             });
           } catch (error) {
             console.error(
@@ -98,7 +98,7 @@ export const getCompanyByIdController = async (req, res) => {
           Key: company.profile_image,
         });
         company.profile_image_url = await getSignedUrlSDK(s3, command, {
-          expiresIn: 3600,
+          expiresIn: 7 * 24 * 60 * 60 // 7 days,
         });
       } catch (error) {
         console.error("Error generating signed URL:", error);
@@ -150,7 +150,7 @@ export const getCompanyController = async (req, res) => {
         Key: company.profile_image,
       });
       company.profile_image_url = await getSignedUrlSDK(s3, command, {
-        expiresIn: 3600,
+        expiresIn: 7 * 24 * 60 * 60 // 7 days,
       });
     }
 
@@ -231,7 +231,7 @@ export const uploadCompanyFileController = async (req, res) => {
         Key: updatedCompany.profile_image,
       });
       response.profile_image_url = await getSignedUrlSDK(s3, command, {
-        expiresIn: 3600,
+        expiresIn: 7 * 24 * 60 * 60 // 7 days,
       });
     }
 
@@ -349,7 +349,7 @@ export const getOfferingController = async (req, res) => {
                   Bucket: process.env.S3_BUCKET_NAME,
                   Key: imageKey,
                 });
-                return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+                return await getSignedUrlSDK(s3, command, { expiresIn: 7 * 24 * 60 * 60 }); // 7 days
               } catch (error) {
                 console.error("Error generating signed URL for:", imageKey, error);
                 return null;
@@ -401,7 +401,7 @@ export const getOfferingByCompanyIdController = async (req, res) => {
               Bucket: process.env.S3_BUCKET_NAME,
               Key: imageKey,
             });
-            return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+            return await getSignedUrlSDK(s3, command, { expiresIn: 7 * 24 * 60 * 60 }); // 7 days
           } catch (error) {
             console.error("Error generating signed URL:", error);
             return null;
@@ -609,7 +609,7 @@ export const getAllOfferingsController = async (req, res) => {
                 Bucket: process.env.S3_BUCKET_NAME,
                 Key: imageKey,
               });
-              return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+              return await getSignedUrlSDK(s3, command, { expiresIn: 7 * 24 * 60 * 60 }); // 7 days
             } catch (error) {
               console.error("Error generating signed URL:", error);
               return null;
@@ -629,7 +629,7 @@ export const getAllOfferingsController = async (req, res) => {
                 Bucket: process.env.S3_BUCKET_NAME,
                 Key: imageKey,
               });
-              return await getSignedUrlSDK(s3, command, { expiresIn: 3600 });
+              return await getSignedUrlSDK(s3, command, { expiresIn: 7 * 24 * 60 * 60 }); // 7 days
             } catch (error) {
               console.error("Error generating signed URL:", error);
               return null;
@@ -792,7 +792,7 @@ export const uploadOfferingImagesController = async (req, res) => {
             Bucket: process.env.S3_BUCKET_NAME,
             Key: key,
           });
-          return await getSignedUrlSDK(s3, cmd, { expiresIn: 3600 });
+          return await getSignedUrlSDK(s3, cmd, { expiresIn: 7 * 24 * 60 * 60 }); // 7 days
         } catch {
           return null;
         }

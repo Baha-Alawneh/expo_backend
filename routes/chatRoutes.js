@@ -72,7 +72,7 @@ router.post(
       });
 
       const signedUrl = await getSignedUrlSDK(s3, command, {
-        expiresIn: 7 * 24 * 60 * 60, // 7 days
+        expiresIn: 7 * 24 * 60 * 60 // 7 days, // 7 days
       });
 
       // Determine file type

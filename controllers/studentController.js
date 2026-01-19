@@ -49,7 +49,7 @@ export const getStudentController = async (req, res) => {
         Key: student.photo_name,
       });
       student.photo_url = await getSignedUrlSDK(s3, photoCommand, {
-        expiresIn: 3600,
+        expiresIn: 7 * 24 * 60 * 60 // 7 days,
       });
     }
 
@@ -59,7 +59,7 @@ export const getStudentController = async (req, res) => {
         Key: student.cv_name,
       });
       student.cv_url = await getSignedUrlSDK(s3, cvCommand, {
-        expiresIn: 3600,
+        expiresIn: 7 * 24 * 60 * 60 // 7 days,
       });
     }
 
@@ -92,7 +92,7 @@ export const getStudentByStudentIdController = async (req, res) => {
         Key: student.photo_name,
       });
       student.photo_url = await getSignedUrlSDK(s3, photoCommand, {
-        expiresIn: 3600,
+        expiresIn: 7 * 24 * 60 * 60 // 7 days,
       });
     }
 
@@ -102,7 +102,7 @@ export const getStudentByStudentIdController = async (req, res) => {
         Key: student.cv_name,
       });
       student.cv_url = await getSignedUrlSDK(s3, cvCommand, {
-        expiresIn: 3600,
+        expiresIn: 7 * 24 * 60 * 60 // 7 days,
       });
     }
 
@@ -212,7 +212,7 @@ export const uploadStudentFilesController = async (req, res) => {
         Key: updatedStudent.photo_name,
       });
       response.photo_url = await getSignedUrlSDK(s3, photoCommand, {
-        expiresIn: 3600,
+        expiresIn: 7 * 24 * 60 * 60 // 7 days,
       });
     }
 
@@ -222,7 +222,7 @@ export const uploadStudentFilesController = async (req, res) => {
         Key: updatedStudent.cv_name,
       });
       response.cv_url = await getSignedUrlSDK(s3, cvCommand, {
-        expiresIn: 3600,
+        expiresIn: 7 * 24 * 60 * 60 // 7 days,
       });
     }
 
@@ -326,7 +326,7 @@ export const getSignedUrlController = async (req, res) => {
       Key: key,
     });
 
-    const url = await getSignedUrlSDK(s3, command, { expiresIn: 3600 }); // Standardized to 1 hour
+    const url = await getSignedUrlSDK(s3, command, { expiresIn: 7 * 24 * 60 * 60 }); // 7 days
 
     res.status(200).json({ success: true, url });
   } catch (error) {
@@ -357,7 +357,7 @@ export const getAllStudentsController = async (req, res) => {
               Key: student.photo_name,
             });
             result.photo_url = await getSignedUrlSDK(s3, photoCommand, {
-              expiresIn: 3600,
+              expiresIn: 7 * 24 * 60 * 60 // 7 days,
             });
           } catch (err) {
             console.error("Error generating photo URL:", err);
@@ -372,7 +372,7 @@ export const getAllStudentsController = async (req, res) => {
               Key: student.cv_name,
             });
             result.cv_url = await getSignedUrlSDK(s3, cvCommand, {
-              expiresIn: 3600,
+              expiresIn: 7 * 24 * 60 * 60 // 7 days,
             });
           } catch (err) {
             console.error("Error generating CV URL:", err);
