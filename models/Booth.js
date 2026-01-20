@@ -306,13 +306,39 @@ export const assignToProject = async (boothId, projectId) => {
     throw new Error('Project not found');
   }
 
-  // Clear company assignment and set project
-  await pool.execute(
-    `UPDATE Booths 
-     SET assigned_to_project = ?, assigned_to_company = NULL 
-     WHERE booth_id = ?`,
-    [projectId, boothId]
+  // Get booth number for the project table
+  const [boothInfo] = await pool.execute(
+    'SELECT booth_number FROM Booths WHERE booth_id = ?',
+    [boothId]
   );
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // Update Booths table: Clear company assignment and set project
+    await connection.execute(
+      `UPDATE Booths 
+       SET assigned_to_project = ?, assigned_to_company = NULL 
+       WHERE booth_id = ?`,
+      [projectId, boothId]
+    );
+
+    // Update Projects table: Set booth field with booth_number
+    await connection.execute(
+      `UPDATE Projects 
+       SET booth = ? 
+       WHERE project_id = ?`,
+      [boothInfo[0].booth_number, projectId]
+    );
+
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 
   return findById(boothId);
 };
@@ -331,13 +357,33 @@ export const assignToCompany = async (boothId, companyId) => {
     throw new Error('Company not found');
   }
 
-  // Clear project assignment and set company
-  await pool.execute(
-    `UPDATE Booths 
-     SET assigned_to_company = ?, assigned_to_project = NULL 
-     WHERE booth_id = ?`,
-    [companyId, boothId]
-  );
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // Update Booths table: Clear project assignment and set company
+    await connection.execute(
+      `UPDATE Booths 
+       SET assigned_to_company = ?, assigned_to_project = NULL 
+       WHERE booth_id = ?`,
+      [companyId, boothId]
+    );
+
+    // Update Companies table: Set booth_id field
+    await connection.execute(
+      `UPDATE Companies 
+       SET booth_id = ? 
+       WHERE company_id = ?`,
+      [boothId, companyId]
+    );
+
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 
   return findById(boothId);
 };
