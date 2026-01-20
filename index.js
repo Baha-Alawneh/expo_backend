@@ -42,6 +42,7 @@ import adminRoutes from "./routes/adminRoutes.js";
 import borderRoutes from "./routes/borders.routes.js";
 import buildingRoutes from "./routes/buildings.routes.js";
 import reelRoutes from "./routes/reelRoutes.js";
+import jobRoutes from "./routes/jobRoutes.js";
 
 const app = express();
 
@@ -70,6 +71,7 @@ app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/borders", borderRoutes);
 app.use("/api/v1/buildings", buildingRoutes);
 app.use("/api/v1/reels", reelRoutes);
+app.use("/api/v1", jobRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -91,6 +93,7 @@ app.get("/", (req, res) => {
       students: "/api/v1/students",
       projects: "/api/v1/projects",
       companies: "/api/v1/companies",
+      jobs: "/api/v1/jobs",
       feedback: "/api/v1/feedback",
       chats: "/api/v1/chats",
       admin: "/api/v1/admin",
