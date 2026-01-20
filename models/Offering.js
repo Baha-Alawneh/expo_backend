@@ -129,7 +129,7 @@ export const createOffering = async (company_id, data) => {
 };
 
 // Update existing offering for company
-export const updateOffering = async (company_id, data) => {
+export const updateOffering = async (offering_id, data) => {
   const { name, description, price, offering_photos } = data;
 
   // Validate and clean offering_photos if provided
@@ -157,21 +157,21 @@ export const updateOffering = async (company_id, data) => {
          description = COALESCE(?, description), 
          price = COALESCE(?, price), 
          offering_photos = ?
-       WHERE company_id = ?`
+       WHERE offering_id = ?`
     : `UPDATE Offering 
        SET 
          name = COALESCE(?, name), 
          description = COALESCE(?, description), 
          price = COALESCE(?, price)
-       WHERE company_id = ?`;
+       WHERE offering_id = ?`;
 
   const params = shouldUpdatePhotos
-    ? [name || null, description || null, price || null, cleanedPhotos, company_id]
-    : [name || null, description || null, price || null, company_id];
+    ? [name || null, description || null, price || null, cleanedPhotos, offering_id]
+    : [name || null, description || null, price || null, offering_id];
 
   await pool.execute(query, params);
 
-  return await getOfferingByCompanyId(company_id);
+  return await getOfferingById(offering_id);
 };
 
 // Get all offerings with optional sorting
@@ -237,7 +237,7 @@ export const getAllOfferings = async (sortBy = null, sortOrder = "DESC") => {
   return offeringsWithRatings;
 };
 
-// Delete offering by company_id
+// Delete offering by company_id (deletes all offerings for a company)
 export const deleteOffering = async (company_id) => {
   const [result] = await pool.execute(
     `DELETE FROM Offering WHERE company_id = ?`,
@@ -245,4 +245,56 @@ export const deleteOffering = async (company_id) => {
   );
 
   return result.affectedRows > 0;
+};
+
+// Delete specific offering by offering_id
+export const deleteOfferingById = async (offering_id) => {
+  const [result] = await pool.execute(
+    `DELETE FROM Offering WHERE offering_id = ?`,
+    [offering_id]
+  );
+
+  return result.affectedRows > 0;
+};
+
+// Get offering by offering_id
+export const getOfferingById = async (offering_id) => {
+  const [rows] = await pool.execute(
+    `SELECT * FROM Offering WHERE offering_id = ?`,
+    [offering_id]
+  );
+
+  if (rows.length === 0) return null;
+
+  const offering = rows[0];
+
+  // Parse offering_photos
+  let images = [];
+  if (offering.offering_photos) {
+    if (Array.isArray(offering.offering_photos)) {
+      images = offering.offering_photos.filter(
+        (photo) => photo && typeof photo === 'string' && photo.trim().length > 0
+      );
+    } else if (typeof offering.offering_photos === 'string') {
+      try {
+        const parsed = JSON.parse(offering.offering_photos);
+        images = Array.isArray(parsed) ? parsed.filter(
+          (photo) => photo && typeof photo === 'string' && photo.trim().length > 0
+        ) : [];
+      } catch (e) {
+        console.error("Error parsing offering_photos:", e);
+        images = [];
+      }
+    }
+  }
+
+  // Get rating stats
+  const ratingStats = await getOfferingAverageRating(offering.offering_id);
+
+  return {
+    ...offering,
+    images,
+    average_rating: ratingStats.average_rating,
+    total_ratings: ratingStats.total_ratings,
+  };
 };

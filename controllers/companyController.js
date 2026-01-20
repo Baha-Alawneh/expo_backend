@@ -68,6 +68,54 @@ export const getAllCompaniesController = async (req, res) => {
 };
 
 // ================================================
+// ============ GET APPROVED COMPANIES ============
+// ================================================
+export const getApprovedCompaniesController = async (req, res) => {
+  try {
+    const { sortBy, sortOrder } = req.query;
+    const companies = await Company.getApprovedCompanies(sortBy, sortOrder);
+    
+    // Generate signed URLs for profile images
+    const companiesWithUrls = await Promise.all(
+      companies.map(async (company) => {
+        if (company.profile_image) {
+          try {
+            const command = new GetObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME,
+              Key: company.profile_image,
+            });
+            company.profile_image_url = await getSignedUrlSDK(s3, command, {
+              expiresIn: 7 * 24 * 60 * 60 // 7 days,
+            });
+          } catch (error) {
+            console.error(
+              `Error generating signed URL for company ${company.company_id}:`,
+              error
+            );
+            company.profile_image_url = null;
+          }
+        } else {
+          company.profile_image_url = null;
+        }
+        return company;
+      })
+    );
+    
+    res.json({
+      success: true,
+      data: companiesWithUrls,
+      count: companiesWithUrls.length,
+    });
+  } catch (error) {
+    console.error("Error fetching approved companies:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching approved companies",
+    });
+  }
+};
+
+// ================================================
 // =============== GET COMPANY BY ID ==============
 // ================================================
 export const getCompanyByIdController = async (req, res) => {
@@ -445,17 +493,7 @@ export const createOfferingController = async (req, res) => {
     // Don't accept offering_photos in create payload - images should be uploaded separately
     delete data.offering_photos;
 
-    // Check if offering already exists
-    const existingOffering = await Offering.getOfferingByCompanyId(
-      company.company_id
-    );
-    if (existingOffering) {
-      return res.status(400).json({
-        success: false,
-        message: "Company already has an offering. Use update instead.",
-      });
-    }
-
+    // Create offering - companies can now have multiple offerings
     const result = await Offering.createOffering(company.company_id, data);
 
     res.status(201).json({
@@ -476,7 +514,7 @@ export const createOfferingController = async (req, res) => {
 // ================================================
 export const updateOfferingController = async (req, res) => {
   try {
-    const { user_id } = req.params;
+    const { user_id, offering_id } = req.params;
     const data = req.body;
 
     // Get company_id from user_id
@@ -487,10 +525,18 @@ export const updateOfferingController = async (req, res) => {
         .json({ success: false, message: "Company not found" });
     }
 
+    // Verify the offering belongs to this company
+    const existingOffering = await Offering.getOfferingById(offering_id);
+    if (!existingOffering || existingOffering.company_id !== company.company_id) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized to update this offering" });
+    }
+
     // Don't accept offering_photos in update payload - images should be uploaded separately
     delete data.offering_photos;
 
-    const offering = await Offering.updateOffering(company.company_id, data);
+    const offering = await Offering.updateOffering(offering_id, data);
 
     res.json({
       success: true,
@@ -681,17 +727,18 @@ export const unassignBoothFromCompanyController = async (req, res) => {
 // ================================================
 export const uploadOfferingImagesController = async (req, res) => {
   try {
-    const { user_id } = req.params;
+    const { user_id, offering_id } = req.params;
     
     console.log("=== Upload Offering Images ===");
     console.log("user_id:", user_id);
+    console.log("offering_id:", offering_id);
     console.log("req.files:", req.files);
     console.log("req.body:", req.body);
     
-    if (!user_id) {
+    if (!user_id || !offering_id) {
       return res.status(400).json({ 
         success: false, 
-        message: "User ID is required" 
+        message: "User ID and Offering ID are required" 
       });
     }
 
@@ -706,12 +753,20 @@ export const uploadOfferingImagesController = async (req, res) => {
 
     console.log("company_id:", company.company_id);
 
-    // Get existing offering
-    const offering = await Offering.getOfferingByCompanyId(company.company_id);
+    // Get existing offering by offering_id
+    const offering = await Offering.getOfferingById(offering_id);
     if (!offering) {
       return res.status(404).json({
         success: false,
-        message: "No offering found. Please create an offering first.",
+        message: "Offering not found",
+      });
+    }
+
+    // Verify ownership
+    if (offering.company_id !== company.company_id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to update this offering",
       });
     }
 
@@ -780,7 +835,7 @@ export const uploadOfferingImagesController = async (req, res) => {
     console.log("All image keys (old + new):", allImageKeys);
 
     // Update database with new images only
-    const updatedOffering = await Offering.updateOffering(company.company_id, {
+    const updatedOffering = await Offering.updateOffering(offering_id, {
       offering_photos: allImageKeys,
     });
 
@@ -822,7 +877,7 @@ export const uploadOfferingImagesController = async (req, res) => {
 // ================================================
 export const deleteOfferingController = async (req, res) => {
   try {
-    const { user_id } = req.params;
+    const { user_id, offering_id } = req.params;
 
     // Get company by user_id
     const company = await Company.getCompanyById(user_id);
@@ -834,8 +889,8 @@ export const deleteOfferingController = async (req, res) => {
       });
     }
 
-    // Get the offering before deleting (to delete S3 images if needed)
-    const offering = await Offering.getOfferingByCompanyId(company.company_id);
+    // Get the specific offering before deleting (to delete S3 images if needed)
+    const offering = await Offering.getOfferingById(offering_id);
 
     if (!offering) {
       return res.status(404).json({
@@ -844,8 +899,16 @@ export const deleteOfferingController = async (req, res) => {
       });
     }
 
+    // Verify the offering belongs to this company
+    if (offering.company_id !== company.company_id) {
+      return res.status(403).json({
+        success: false,
+        message: "You don't have permission to delete this offering",
+      });
+    }
+
     // Delete the offering from database first
-    const deleted = await Offering.deleteOffering(company.company_id);
+    const deleted = await Offering.deleteOfferingById(offering_id);
     
     // Then try to delete offering images from S3 if they exist (non-blocking)
     if (offering.images && offering.images.length > 0) {
@@ -854,7 +917,7 @@ export const deleteOfferingController = async (req, res) => {
           if (imageKey && typeof imageKey === 'string' && imageKey.trim()) {
             await s3.send(
               new DeleteObjectCommand({
-                Bucket: process.env.AWS_BUCKET_NAME,
+                Bucket: process.env.S3_BUCKET_NAME,
                 Key: imageKey,
               })
             );

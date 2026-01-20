@@ -1,6 +1,7 @@
 import express from "express";
 import {
   getAllCompaniesController,
+  getApprovedCompaniesController,
   getCompanyController,
   getCompanyByIdController,
   getCompanyStatusController,
@@ -26,6 +27,9 @@ const router = express.Router();
 
 // Get all companies (for Companies tab)
 router.get("/", authenticateToken, getAllCompaniesController);
+
+// Get approved companies only (for Explore tab)
+router.get("/approved", authenticateToken, getApprovedCompaniesController);
 
 // Get company status by user_id
 router.get("/status/:user_id", authenticateToken, getCompanyStatusController);
@@ -102,14 +106,14 @@ router.post(
 );
 
 router.put(
-  "/offering/:user_id",
+  "/offering/:user_id/:offering_id",
   authenticateToken,
   authorizeUser,
   updateOfferingController
 );
 
 router.delete(
-  "/offering/:user_id",
+  "/offering/:user_id/:offering_id",
   authenticateToken,
   authorizeUser,
   deleteOfferingController
@@ -121,7 +125,7 @@ router.patch("/:company_id/assign-booth", authenticateToken, assignBoothToCompan
 router.patch("/:company_id/unassign-booth", authenticateToken, unassignBoothFromCompanyController);
 // Upload offering images
 router.post(
-  "/offering/:user_id/upload",
+  "/offering/:user_id/:offering_id/upload",
   authenticateToken,
   authorizeUser,
   uploadRateLimiter,

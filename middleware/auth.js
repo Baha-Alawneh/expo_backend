@@ -5,6 +5,15 @@ dotenv.config();
 
 export const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
+  const isGuest = req.headers["x-guest"] === "true";
+
+  // Allow guest access for read-only operations
+  if (isGuest) {
+    console.log("👤 Guest user accessing public content");
+    req.user = { role: "visitor", isGuest: true };
+    return next();
+  }
+
   const token = authHeader && authHeader.split(" ")[1]; // Bearer TOKEN
 
   if (!token) {

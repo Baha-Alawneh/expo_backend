@@ -46,6 +46,21 @@ export const getFeedbackByOfferingId = async (offering_id) => {
 };
 
 /**
+ * Get all feedback for a specific company
+ */
+export const getFeedbackByCompanyId = async (company_id) => {
+  const [rows] = await pool.execute(
+    `SELECT f.*, u.name as user_name, u.email as user_email
+     FROM Feedback f
+     JOIN Users u ON f.user_id = u.user_id
+     WHERE f.entity_id = ? AND f.entity_type = 'company'
+     ORDER BY f.created_at DESC`,
+    [company_id]
+  );
+  return rows;
+};
+
+/**
  * Get user's feedback for a specific project
  */
 export const getUserFeedbackForProject = async (user_id, project_id) => {
@@ -85,6 +100,12 @@ const validateEntityExists = async (entity_id, entity_type) => {
       [entity_id]
     );
     return rows.length > 0;
+  } else if (entity_type === "company") {
+    const [rows] = await pool.execute(
+      `SELECT company_id FROM Companies WHERE company_id = ?`,
+      [entity_id]
+    );
+    return rows.length > 0;
   }
   return false;
 };
@@ -100,14 +121,14 @@ export const createFeedback = async (data) => {
     throw new Error("entity_id is required");
   }
 
-  if (!entity_type || !["project", "offer"].includes(entity_type)) {
-    throw new Error("entity_type must be either 'project' or 'offer'");
+  if (!entity_type || !["project", "offer", "company"].includes(entity_type)) {
+    throw new Error("entity_type must be either 'project', 'offer', or 'company'");
   }
 
   // Validate that the entity exists in the appropriate table
   const entityExists = await validateEntityExists(entity_id, entity_type);
   if (!entityExists) {
-    const tableName = entity_type === "project" ? "Projects" : "Offering";
+    const tableName = entity_type === "project" ? "Projects" : entity_type === "offer" ? "Offering" : "Companies";
     throw new Error(
       `${entity_type} with ID ${entity_id} not found in ${tableName} table`
     );

@@ -478,7 +478,15 @@ export const getPendingCompanies = async (req, res) => {
     console.log('[Admin] Fetching pending companies...');
     const [companies] = await pool.execute(`
       SELECT 
-        c.*,
+        c.company_id,
+        c.company_name,
+        c.description,
+        c.type,
+        c.phone,
+        c.address,
+        c.website_url,
+        c.profile_image,
+        c.status,
         u.name,
         u.email,
         u.created_at as user_created_at
@@ -490,9 +498,35 @@ export const getPendingCompanies = async (req, res) => {
 
     console.log(`[Admin] Found ${companies.length} pending companies`);
 
+    // Generate signed URLs for profile images
+    const companiesWithUrls = await Promise.all(
+      companies.map(async (company) => {
+        if (company.profile_image) {
+          try {
+            const command = new GetObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME,
+              Key: company.profile_image,
+            });
+            company.profile_image_url = await getSignedUrlSDK(s3, command, {
+              expiresIn: 7 * 24 * 60 * 60 // 7 days
+            });
+          } catch (error) {
+            console.error(
+              `Error generating signed URL for company ${company.company_id}:`,
+              error
+            );
+            company.profile_image_url = null;
+          }
+        } else {
+          company.profile_image_url = null;
+        }
+        return company;
+      })
+    );
+
     res.status(200).json({
       success: true,
-      data: companies,
+      data: companiesWithUrls,
     });
   } catch (error) {
     console.error("Error fetching pending companies:", error);
@@ -506,6 +540,84 @@ export const getPendingCompanies = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch pending companies",
+      error: error.message,
+    });
+  }
+};
+
+// Get Companies by Status (pending, approved, rejected)
+export const getCompaniesByStatus = async (req, res) => {
+  try {
+    const { status } = req.params;
+
+    console.log(`[Admin] Fetching companies with status: ${status}`);
+
+    // Validate status
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status. Must be 'pending', 'approved', or 'rejected'",
+      });
+    }
+
+    const [companies] = await pool.execute(`
+      SELECT 
+        c.company_id,
+        c.company_name,
+        c.description,
+        c.type,
+        c.phone,
+        c.address,
+        c.website_url,
+        c.profile_image,
+        c.status,
+        c.rejection_reason,
+        u.name,
+        u.email,
+        u.created_at as user_created_at
+      FROM Companies c
+      LEFT JOIN Users u ON c.user_id = u.user_id
+      WHERE c.status = ?
+      ORDER BY u.created_at DESC
+    `, [status]);
+
+    console.log(`[Admin] Found ${companies.length} companies with status: ${status}`);
+
+    // Generate signed URLs for profile images
+    const companiesWithUrls = await Promise.all(
+      companies.map(async (company) => {
+        if (company.profile_image) {
+          try {
+            const command = new GetObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME,
+              Key: company.profile_image,
+            });
+            company.profile_image_url = await getSignedUrlSDK(s3, command, {
+              expiresIn: 7 * 24 * 60 * 60 // 7 days
+            });
+          } catch (error) {
+            console.error(
+              `Error generating signed URL for company ${company.company_id}:`,
+              error
+            );
+            company.profile_image_url = null;
+          }
+        } else {
+          company.profile_image_url = null;
+        }
+        return company;
+      })
+    );
+
+    res.status(200).json({
+      success: true,
+      data: companiesWithUrls,
+    });
+  } catch (error) {
+    console.error(`Error fetching companies by status:`, error);
+    res.status(500).json({
+      success: false,
+      message: `Failed to fetch ${req.params.status} companies`,
       error: error.message,
     });
   }
@@ -622,11 +734,11 @@ export const getOfferingsByStatus = async (req, res) => {
           name: offering.name,
           description: offering.description,
           price: offering.price,
-          status: offering.status,
           created_at: offering.created_at,
           company_id: offering.company_id,
           company_name: offering.company_name,
           company_email: offering.company_email,
+          company_status: offering.company_status,
           profile_image_url: profileImageUrl,
           images: images,
           offering_photos: images,
@@ -697,11 +809,18 @@ export const updateCompanyStatus = async (req, res) => {
 
     const company = companyRows[0];
 
-    // Update company status
-    await pool.execute(
-      `UPDATE Companies SET status = ? WHERE company_id = ?`,
-      [status, company_id]
-    );
+    // Update company status and rejection reason if applicable
+    if (status === "rejected") {
+      await pool.execute(
+        `UPDATE Companies SET status = ?, rejection_reason = ? WHERE company_id = ?`,
+        [status, rejection_reason, company_id]
+      );
+    } else {
+      await pool.execute(
+        `UPDATE Companies SET status = ?, rejection_reason = NULL WHERE company_id = ?`,
+        [status, company_id]
+      );
+    }
 
     // Send notification based on status
     if (status === "approved") {
@@ -813,8 +932,9 @@ export const sendNotification = async (req, res) => {
 
     // Determine target users based on target_type
     if (target_type === "all") {
+      // Send to students, companies, and visitors - NOT admins
       const [users] = await pool.execute(
-        `SELECT user_id, role FROM Users WHERE role IN ('student', 'company')`
+        `SELECT user_id, role FROM Users WHERE role IN ('student', 'company', 'visitor')`
       );
       targetUsers = users;
     } else if (target_type === "students") {
@@ -1191,6 +1311,68 @@ export const getTopRatedOfferings = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch top rated offerings",
+    });
+  }
+};
+
+// Get top 5 highest-rated companies
+export const getTopRatedCompanies = async (req, res) => {
+  try {
+    // First, try to get companies with direct feedback (entity_type = 'company')
+    const [companies] = await pool.execute(`
+      SELECT 
+        c.company_id,
+        c.company_name,
+        AVG(f.rating) as average_rating,
+        COUNT(f.feedback_id) as rating_count
+      FROM Companies c
+      LEFT JOIN Feedback f ON c.company_id = f.entity_id AND f.entity_type = 'company'
+      WHERE c.status = 'approved' AND f.rating IS NOT NULL
+      GROUP BY c.company_id, c.company_name
+      HAVING rating_count > 0
+      ORDER BY average_rating DESC, rating_count DESC
+      LIMIT 5
+    `);
+
+    console.log('[Analytics] Direct company feedback - Found:', companies.length, 'companies');
+
+    // If no companies with direct feedback, check through offerings
+    if (companies.length === 0) {
+      console.log('[Analytics] No direct company feedback found, checking through offerings...');
+      const [companiesViaOfferings] = await pool.execute(`
+        SELECT 
+          c.company_id,
+          c.company_name,
+          AVG(f.rating) as average_rating,
+          COUNT(DISTINCT f.feedback_id) as rating_count
+        FROM Companies c
+        INNER JOIN Offering o ON c.company_id = o.company_id
+        LEFT JOIN Feedback f ON o.offering_id = f.entity_id AND f.entity_type = 'offer'
+        WHERE c.status = 'approved' AND f.rating IS NOT NULL
+        GROUP BY c.company_id, c.company_name
+        HAVING rating_count > 0
+        ORDER BY average_rating DESC, rating_count DESC
+        LIMIT 5
+      `);
+      
+      console.log('[Analytics] Companies via offerings - Found:', companiesViaOfferings.length, 'companies');
+      
+      res.status(200).json({
+        success: true,
+        data: companiesViaOfferings,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: companies,
+    });
+  } catch (error) {
+    console.error("Error fetching top rated companies:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch top rated companies",
     });
   }
 };

@@ -332,7 +332,8 @@ export const updateCompanyStatus = async (company_id, status) => {
   return await getCompanyByCompanyId(company_id);
 };
 
-export const getApprovedCompanies = async () => {
+export const getApprovedCompanies = async (sortBy = null, sortOrder = "DESC") => {
+  // Fetch approved companies
   const [rows] = await pool.query(
     `SELECT 
       company_id,
@@ -347,9 +348,67 @@ export const getApprovedCompanies = async () => {
       address,
       status
     FROM Companies
-    WHERE status = 'approved'
-    ORDER BY company_name ASC`
+    WHERE status = 'approved'`
   );
 
-  return rows;
+  // For each company, get ratings from all its offerings
+  const companiesWithRatings = await Promise.all(
+    rows.map(async (company) => {
+      // Get all offerings for this company
+      const [offeringRows] = await pool.execute(
+        `SELECT offering_id FROM Offering WHERE company_id = ?`,
+        [company.company_id]
+      );
+
+      // Get ratings for all offerings
+      let totalRating = 0;
+      let totalCount = 0;
+
+      for (const offering of offeringRows) {
+        const [ratingRows] = await pool.execute(
+          `SELECT 
+             AVG(rating) as average_rating,
+             COUNT(*) as total_ratings
+           FROM Feedback 
+           WHERE entity_id = ? AND entity_type = 'offer'`,
+          [offering.offering_id]
+        );
+
+        if (ratingRows[0].average_rating) {
+          totalRating += ratingRows[0].average_rating * ratingRows[0].total_ratings;
+          totalCount += ratingRows[0].total_ratings;
+        }
+      }
+
+      return {
+        ...company,
+        average_rating: totalCount > 0 ? parseFloat((totalRating / totalCount).toFixed(2)) : 0,
+        total_ratings: totalCount,
+      };
+    })
+  );
+
+  // Sort by name if requested
+  if (sortBy === "name") {
+    companiesWithRatings.sort((a, b) => {
+      if (sortOrder === "ASC") {
+        return a.company_name.localeCompare(b.company_name);
+      } else {
+        return b.company_name.localeCompare(a.company_name);
+      }
+    });
+  }
+
+  // Sort by rating if requested
+  if (sortBy === "rating") {
+    companiesWithRatings.sort((a, b) => {
+      if (sortOrder === "ASC") {
+        return a.average_rating - b.average_rating;
+      } else {
+        return b.average_rating - a.average_rating;
+      }
+    });
+  }
+
+  return companiesWithRatings;
 };
