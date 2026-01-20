@@ -357,6 +357,12 @@ export const assignToCompany = async (boothId, companyId) => {
     throw new Error('Company not found');
   }
 
+  // Get booth number for the company table
+  const [boothInfo] = await pool.execute(
+    'SELECT booth_number FROM Booths WHERE booth_id = ?',
+    [boothId]
+  );
+
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -369,12 +375,12 @@ export const assignToCompany = async (boothId, companyId) => {
       [companyId, boothId]
     );
 
-    // Update Companies table: Set booth_id field
+    // Update Companies table: Set booth_id field with booth_number
     await connection.execute(
       `UPDATE Companies 
        SET booth_id = ? 
        WHERE company_id = ?`,
-      [boothId, companyId]
+      [boothInfo[0].booth_number, companyId]
     );
 
     await connection.commit();
