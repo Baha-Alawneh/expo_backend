@@ -6,6 +6,7 @@ import {
   getReelByIdController,
   deleteReelController,
   updateReelDescriptionController,
+  getReelUserBoothController,
 } from "../controllers/reelController.js";
 import { upload } from "../config/multer.js";
 import { authenticateToken, authorizeUser } from "../middleware/auth.js";
@@ -18,6 +19,9 @@ router.get("/", authenticateToken, getAllReelsController);
 
 // Get a specific reel by ID
 router.get("/:reel_id", authenticateToken, getReelByIdController);
+
+// Get booth information for reel's user
+router.get("/:reel_id/booth", authenticateToken, getReelUserBoothController);
 
 // Get reels by user ID
 router.get("/user/:user_id", authenticateToken, getUserReelsController);
