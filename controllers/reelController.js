@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import { S3Client, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl as getSignedUrlSDK } from "@aws-sdk/s3-request-presigner";
 import Reel from "../models/Reel.js";
+import pool from "../config/db.js";
 
 dotenv.config();
 
@@ -312,6 +313,100 @@ export const updateReelDescriptionController = async (req, res) => {
       success: false,
       message: "Failed to update reel description",
       error: error.message,
+    });
+  }
+};
+
+// ================================================
+// ========== GET BOOTH INFO FOR REEL USER ========
+// ================================================
+export const getReelUserBoothController = async (req, res) => {
+  try {
+    const { reel_id } = req.params;
+
+    // Optimized single query to get booth information
+    const [rows] = await pool.execute(
+      `SELECT 
+        u.role,
+        u.name as user_name,
+        CASE 
+          WHEN u.role = 'student' THEN p.booth
+          WHEN u.role = 'company' THEN c.booth_id
+          ELSE NULL
+        END as booth_number,
+        b.booth_id as booth_uuid,
+        b.location_x,
+        b.location_y,
+        b.zone_type,
+        b.width,
+        b.height,
+        b.rotation
+      FROM Reels r
+      JOIN Users u ON r.user_id = u.user_id
+      LEFT JOIN Students s ON u.user_id = s.user_id AND u.role = 'student'
+      LEFT JOIN ProjectMembers pm ON s.student_id = pm.student_id AND u.role = 'student'
+      LEFT JOIN Projects p ON pm.project_id = p.project_id AND u.role = 'student'
+      LEFT JOIN Companies c ON u.user_id = c.user_id AND u.role = 'company'
+      LEFT JOIN Booths b ON (
+        (u.role = 'student' AND b.booth_number = p.booth) OR
+        (u.role = 'company' AND b.booth_number = c.booth_id)
+      )
+      WHERE r.reel_id = ?
+      LIMIT 1`,
+      [reel_id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Reel not found"
+      });
+    }
+
+    const result = rows[0];
+    
+    // Debug logging
+    console.log('🔍 Booth query result:', {
+      role: result.role,
+      user_name: result.user_name,
+      booth_number: result.booth_number,
+      booth_uuid: result.booth_uuid,
+      has_booth_number: !!result.booth_number,
+      has_booth_uuid: !!result.booth_uuid
+    });
+
+    // Check if user has a booth assigned
+    if (!result.booth_number || !result.booth_uuid) {
+      console.log('❌ No booth found - returning 404');
+      return res.status(404).json({
+        success: false,
+        message: `This ${result.role} does not have a booth assigned yet`
+      });
+    }
+    
+    console.log('✅ Booth found - returning data');
+
+    res.status(200).json({
+      success: true,
+      data: {
+        role: result.role,
+        user_name: result.user_name,
+        booth_number: result.booth_number,
+        booth_id: result.booth_uuid,
+        location_x: result.location_x,
+        location_y: result.location_y,
+        zone_type: result.zone_type,
+        width: result.width,
+        height: result.height,
+        rotation: result.rotation
+      }
+    });
+  } catch (error) {
+    console.error("Error getting booth info for reel:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to get booth information",
+      error: error.message
     });
   }
 };
