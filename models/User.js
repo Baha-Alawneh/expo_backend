@@ -14,6 +14,10 @@ const User = {
     await pool.query(query, [userId, name, email, password, role, created_at]);
     return userId;
   },
+  updatePassword: async (userId, hashedPassword) => {
+    const query = "UPDATE Users SET password_hash = ? WHERE user_id = ?";
+    await pool.query(query, [hashedPassword, userId]);
+  },
 };
 
 export default User;

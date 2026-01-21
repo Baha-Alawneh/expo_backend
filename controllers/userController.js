@@ -79,3 +79,44 @@ export const loginUser = async (req, res) => {
     res.status(500).json({ success: false, message: "Error logging in" });
   }
 };
+
+// Reset password with verification
+export const resetPassword = async (req, res) => {
+  const { email, newPassword } = req.body;
+
+  try {
+    // Validate input
+    if (!email || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and new password are required",
+      });
+    }
+
+    // Check if user exists
+    const user = await User.findUserByEmail(email);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password in database
+    await User.updatePassword(user.user_id, hashedPassword);
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset successfully",
+    });
+  } catch (error) {
+    console.error("Error resetting password:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error resetting password",
+    });
+  }
+};

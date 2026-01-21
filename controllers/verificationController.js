@@ -76,3 +76,85 @@ export const verifyCode = (req, res) => {
 
   res.json({ success: false, message: "Invalid verification code" });
 };
+
+// Send password reset code
+export const sendPasswordResetCode = async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "Email is required" 
+    });
+  }
+
+  // Generate 6-digit code
+  const code = Math.floor(100000 + Math.random() * 900000);
+
+  // Store code with 5-minute expiration
+  codes[email] = { code, expires: Date.now() + 5 * 60 * 1000 };
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: "Password Reset Code",
+    text: `Your password reset code is ${code}. This code will expire in 5 minutes. If you did not request this, please ignore this email.`,
+  };
+
+  try {
+    console.log(`Sending password reset code ${code} to ${email}`);
+    await transporter.sendMail(mailOptions);
+    res.json({ 
+      success: true, 
+      message: "Password reset code sent to your email" 
+    });
+  } catch (error) {
+    console.error("Error sending reset code:", error.response || error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to send password reset code" 
+    });
+  }
+};
+
+// Verify password reset code
+export const verifyPasswordResetCode = (req, res) => {
+  const { email, code } = req.body;
+
+  const stored = codes[email];
+  if (!stored) {
+    return res.json({
+      success: false,
+      message: "No code found for this email",
+    });
+  }
+
+  if (Date.now() > stored.expires) {
+    delete codes[email];
+    return res.json({ 
+      success: false, 
+      message: "Code expired" 
+    });
+  }
+
+  if (parseInt(code) === stored.code) {
+    delete codes[email];
+    return res.json({ 
+      success: true, 
+      message: "Code verified successfully" 
+    });
+  }
+
+  res.json({ 
+    success: false, 
+    message: "Invalid verification code" 
+  });
+};
